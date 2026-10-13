@@ -80,9 +80,10 @@ export function SourceContent() {
     <>
       <p>
         Upload a JSON bundle with <code>manifest</code> and <code>files</code>. The application
-        format uses React and TypeScript with the supplied shadcn Nova starter. The platform
-        supplies pinned dependencies and build configuration; apps cannot install packages or run
-        arbitrary server frameworks.
+        format contains a complete TanStack Start project with React, TypeScript and shadcn Nova.
+        The starter includes its actual package manifest, Vite configuration, router, routes, UI
+        components and typed platform SDK. The agent edits the project files and runs its normal
+        check and build commands in an isolated workspace.
       </p>
       <Table>
         <TableHeader>
@@ -95,14 +96,15 @@ export function SourceContent() {
           <TableRow>
             <TableCell className="whitespace-normal">src/App.tsx</TableCell>
             <TableCell className="whitespace-normal">
-              React entry component, exported as default. Compose supplied shadcn components and
-              platform capabilities in ordinary TSX.
+              The starter's application component. Its index route renders this component;
+              additional routes can render their own components.
             </TableCell>
           </TableRow>
           <TableRow>
-            <TableCell className="whitespace-normal">src/components/**/*.tsx or .ts</TableCell>
+            <TableCell className="whitespace-normal">src/routes/**/*.tsx</TableCell>
             <TableCell className="whitespace-normal">
-              Optional app-specific components and helpers. Relative source imports are supported.
+              TanStack file routes, loaders and server functions. __root.tsx owns the document,
+              metadata and stylesheet links.
             </TableCell>
           </TableRow>
           <TableRow>
@@ -110,6 +112,22 @@ export function SourceContent() {
             <TableCell className="whitespace-normal">
               Optional app styles alongside generated Tailwind utilities and the supplied Nova
               theme. External resources are unavailable.
+            </TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell className="whitespace-normal">src/components/ and src/lib/</TableCell>
+            <TableCell className="whitespace-normal">
+              Actual shadcn components, reusable capability components, app-specific modules and the
+              typed cd80 SDK.
+            </TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell className="whitespace-normal">
+              package.json, vite.config.ts, tsconfig.json
+            </TableCell>
+            <TableCell className="whitespace-normal">
+              The real workspace package scripts, dependencies and framework configuration. These
+              files are visible in Code.
             </TableCell>
           </TableRow>
         </TableBody>
@@ -123,7 +141,7 @@ export function SourceContent() {
           <code>
             {JSON.stringify(
               {
-                schemaVersion: 2,
+                schemaVersion: 3,
                 name: "My portfolio app",
                 protocol: "portfolio",
                 permissions: [
@@ -141,13 +159,12 @@ export function SourceContent() {
         </Pre>
       </CodeBlock>
       <p>
-        Apps import React, stock shadcn primitives from <code>@/components/ui/*</code>, reusable
-        capability components from <code>@cd80/components</code>, and typed platform capabilities
-        from <code>@cd80/sdk</code>. Build dependencies and the entry point are platform-owned, not
-        editable package configuration. Bundles are limited to 44 source files and 200 KB of source;
-        the upload limit is 250 KB. Imported updates must retain the app's existing protocol. Import
-        source while an app is selected to apply an update; choose New chat first to create a
-        separate app.
+        Import stock shadcn primitives from <code>@/components/ui/*</code>, reusable capability
+        components from <code>@/components/capabilities</code>, and the typed SDK from
+        <code>@/lib/cd80</code>. Generated server code runs in an isolated process without platform
+        credentials or outbound networking. The preview serves the actual framework document and
+        modules; it is not a compiled JavaScript string embedded in the builder. Imported updates
+        retain the existing protocol and app data. Choose New chat to create a separate app.
       </p>
     </>
   );
@@ -156,12 +173,12 @@ export function SdkContent() {
   return (
     <>
       <p>
-        Import typed capabilities from <code>@cd80/sdk</code>. The host provides an isolated message
-        bridge; applications receive no model, database or provider credentials.
+        Import typed capabilities from <code>@/lib/cd80</code>. The host provides an isolated
+        message bridge; applications receive no model, database or provider credentials.
       </p>
       <CodeBlock>
         <Pre>
-          <code>{`import { cd80, portfolioInputSchema } from '@cd80/sdk';
+          <code>{`import { cd80, portfolioInputSchema } from '@/lib/cd80';
 
 const inputs = await cd80.storage.read('inputs', portfolioInputSchema);
 if (inputs) {
@@ -173,15 +190,15 @@ await cd80.storage.write('note', 'Saved by the active app');`}</code>
       </CodeBlock>
       <p>
         Import stock shadcn primitives from <code>@/components/ui/*</code>.
-        <code>@cd80/components</code> supplies MetricCard, DataTable, PluginPanel and
-        AIExplanationPanel. The fixed shell mounts the default export from
-        <code>src/App.tsx</code>, provides TanStack Query and reports readiness.
+        <code>@/components/capabilities</code> supplies MetricCard, DataTable, PluginPanel and
+        AIExplanationPanel. The starter's TanStack router provides TanStack Query; its root route
+        renders the document and reports readiness after hydration.
       </p>
       <p>
         Calls return a Promise and reject on missing permissions, invalid data or unavailable
         services. Unknown storage and plugin data becomes typed only after validation with the
-        caller's schema. The application can inspect supplied starter sources in Code; those
-        dependencies and build configuration remain platform-owned.
+        caller's schema. The application can inspect the actual SDK and component source alongside
+        its routes, package manifest and configuration in Code.
       </p>
     </>
   );
@@ -272,13 +289,11 @@ export function VerificationContent() {
   return (
     <>
       <p>
-        Each build first type-checks and bundles TSX against the fixed React/shadcn starter in a
-        bounded build worker. Only approved imports and workspace source paths can resolve. The
-        compiled browser bundle runs under an opaque iframe with CSP and the capability bridge,
-        without direct networking or credentials. Every build checks metadata, source syntax,
-        required permissions, potential embedded credentials and the fixed financial capability's
-        protocol fixture, boundary values and invalid inputs. Financial calculations execute on the
-        platform, not in generated calculation files.
+        Every release runs the project's normal type checks and TanStack Start build in an isolated
+        workspace. Generated server code runs with an isolated filesystem and network, without
+        platform secrets. Source checks reject unsupported project files and embedded credentials.
+        Independent fixtures validate fixed financial capabilities. Failed checks leave the active
+        release and app data in place.
       </p>
       <p>
         These tests validate the published protocol contract. They do not certify every additional
@@ -322,10 +337,10 @@ export function ConversationContent() {
         leave the working site and data intact.
       </p>
       <p>
-        New workspaces use the React/TSX starter with editable app components and supplied shadcn
-        primitives. The shell is isolated from host files, secrets and networking, and is not a
-        package-install environment. Deployment type-checks source, builds the fixed starter and
-        runs protocol and isolation checks before automatically activating the site.
+        Workspaces contain real TanStack Start project files. The agent works on routes, components,
+        SDK calls and project configuration. Checks and builds run in an isolated process; browser
+        previews serve the framework through a scoped preview session. Successful releases activate
+        automatically.
       </p>
     </>
   );
@@ -352,7 +367,7 @@ export function PluginsContent() {
       </p>
       <CodeBlock>
         <Pre>
-          <code>{`import { cd80 } from '@cd80/sdk';
+          <code>{`import { cd80 } from '@/lib/cd80';
 const weather = await cd80.plugins.call({
   pluginId: "registered-plugin-id",
   operationId: "getWeather",

@@ -19,6 +19,8 @@ Existing embedded chat histories can be migrated through the trusted `platform.m
 
 Generation runs through TanStack AI on the Node server after it claims a saved queued turn. SSE is consumed only for execution status and errors; streaming message text is checkpointed to Convex once per second and flushed when the turn ends. Model context is compacted separately from stored conversation history. Verification, shell tools, external plugin calls and permission-checked app runtime operations continue on Node.
 
+Agent runs have no overall time or iteration cap. Stop cancels a run; sending another message interrupts it and continues from the saved conversation and workspace. The previous writer finishes before the replacement starts. Individual shell/build commands retain resource limits. Consecutive tool calls appear in one expandable activity group between assistant text messages.
+
 `bun run dev:local` remains an explicit file-backed prototype launcher for isolated fixture tests. It does not use Convex.
 
 The launcher reads `apps/web/.env`, root `.env`, then the workspace `../.env`. Non-empty workspace values take precedence. Secrets stay server-side.
@@ -44,15 +46,15 @@ Portfolio, screening and strategy protocols are provisional feasibility examples
 
 ## Source and runtime
 
-Public docs: `/docs` and `/api/docs`. New apps use a React-only source format: `src/App.tsx`, optional `src/styles.css` and nested `src/components/*.tsx` or `.ts` files. Titles, protocols and capability permissions are system metadata in Convex, managed by agent tools rather than source files. The AI writes real TypeScript/JSX rather than a composition-only configuration. The platform supplies React, Tailwind v4, shadcn Nova, TanStack Query, Zod, Lucide icons, the typed `@cd80/sdk` and reusable `@cd80/components`. It supplies the React root and QueryClientProvider too. Code shows the app source alongside a read-only `starter/` tree containing the exact shadcn TSX, Tailwind preset, SDK, entry template, compiler, dependency manifests and lockfile used by the installed starter. These are source files, not compiled JS/CSS; environment files and host paths are never exposed.
+Public docs: `/docs` and `/api/docs`. Each new app is an actual TanStack Start project, with `package.json`, `vite.config.ts`, `tsconfig.json`, routes, router, Tailwind stylesheet, local shadcn Nova components and a typed SDK. The agent edits these files through source tools and real Bash commands. The Code tree shows only actual app files, including its framework configuration; platform runner internals stay outside the app.
 
-A fixed worker run by Bun typechecks and bundles these sources with the existing Vite toolchain before activation. It parses browser source without importing or running generated code on the server. The worker receives a scrubbed environment, approved imports and a fixed build configuration; arbitrary packages, macros, dynamic imports and compiler directives are rejected. Builds run serially with a 60-second deadline. This is a bounded compiler subprocess, not an OS sandbox or a separate container per app.
+Source snapshots and metadata are stored in Convex. The Node platform materializes each app/turn/release in its own checkout and runs the project's standard `bun run build` and `bun run check` commands. Its Vite development server provides the live preview, including SSR, routing and server functions. The project uses pinned, preinstalled dependencies; build-time outbound networking is disabled. Dependency/build caches and environment files are excluded from persisted source. Source limits are 200 files, 200 KB total, and 60 KB per file; JSON uploads remain limited to 250 KB.
 
-Source and data stay in Convex. Compiled JS/CSS are cached on Node and served through an ownership-checked asset endpoint; they are rebuilt from verified source after restart. Legacy bundle formats are unsupported. JSON bundle uploads contain React source and system metadata, up to 250 KB; format 2 permits at most 44 source files and 200 KB of source.
+Generated configuration, build scripts and server code run inside Bubblewrap user, mount, PID and network namespaces. Only the app checkout, its own temporary directories, runtime binaries and read-only installed packages are mounted. Platform environment variables, credentials, host project files and host networking are unavailable. Processes have time, memory, process-count, file-size and output limits. Linux user namespaces, `bwrap` and `prlimit` are required; unsupported isolation fails closed.
 
-Browser apps run in opaque-origin iframes with restrictive CSP and a permission-checked `cd80.call()` bridge. Financial capabilities use trusted platform functions; generated code executes only in the browser. App sources, releases and shared data are in Convex.
+Previews use signed, short-lived, owner-scoped URLs through a Unix-socket proxy. Platform cookies and authorization are stripped before forwarding to the app. An opaque iframe and restrictive CSP keep the existing permission-checked browser SDK bridge: plugin credentials and financial/storage/AI operations remain on the platform. Financial capabilities use trusted functions. Browser logs return to the conversation.
 
-Releases require source policy, metadata consistency, credential-pattern, TypeScript and compilation checks. Browser smoke tests separately verify actual React rendering, SDK calls, shadcn styling and iframe networking restrictions; compilation alone does not certify rendered behavior. SHA-256 binds checks to exact source. Passing establishes the tested protocol contract, not certification of every additional calculation or the full specification. Review custom logic and rendered previews.
+Passing project builds activate automatically; failed builds retain the working release and saved data. Source hashes bind checks to the exact project snapshot. Browser E2E checks separately validate hydration, routes, server functions, SDK calls and runtime isolation. The full framework workspace supersedes the earlier source-bundle compiler; legacy project formats are unsupported.
 
 Nine capabilities cover normalized market data, reusable financial functions, custom calculations, shared storage and managed AI. New providers require adapters. `_provenance` is reserved; edited inputs are labelled user-entered. AI explanations use server-recomputed saved inputs.
 
@@ -61,9 +63,9 @@ Nine capabilities cover normalized market data, reusable financial functions, cu
 With the local Convex-backed dev server running and an existing generated conversation, `bun run test:convex` checks normalized storage, migration, access checks, direct mutations, reactive messages across two Chrome tabs, transport failure recovery and thread deletion. It also verifies that client-bound SSE text cannot override the Convex transcript. It makes one live model call and writes screenshots/results to `.local/convex-tests/`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when using an existing Chrome installation.
 
 ```bash
-bun scripts/test-tsx.ts      # React/shadcn browser E2E; build first with VITE_LOCAL_MODE=1
+bun scripts/test-tsx.ts      # Actual framework SSR, server functions, isolation and browser E2E; build first
 bun run test:prototype       # Fixed financial functions, source hash/policy and persistence checks
-bun run test:flow            # 13 HTTP lifecycle checks on temporary data
+bun run test:flow            # 11 HTTP lifecycle checks on temporary data
 bun run test:model-contract  # 3 mock Responses transport checks, not live inference
 bun run test:glm-contract    # 10 mock GLM format/recovery/deadline checks
 bun run test:query-stream    # 2 query-stream hydration regressions

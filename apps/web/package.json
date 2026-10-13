@@ -11,8 +11,6 @@
   "dependencies": {
     "@convex-dev/react-query": "^0.1.0",
     "@phosphor-icons/react": "^2.1.10",
-    "@tailwindcss/node": "4.3.2",
-    "@tailwindcss/oxide": "4.3.2",
     "@tailwindcss/vite": "^4.3.1",
     "@tanstack/ai": "^0.39.1",
     "@tanstack/ai-openai": "^0.15.10",
@@ -29,7 +27,6 @@
     "convex": "catalog:",
     "fumadocs-core": "^16.17.2",
     "fumadocs-ui": "^16.17.2",
-    "just-bash": "^3.6.0",
     "lucide-react": "catalog:",
     "monaco-editor": "^0.57.0",
     "next-themes": "catalog:",

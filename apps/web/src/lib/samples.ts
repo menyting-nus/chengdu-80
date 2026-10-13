@@ -1,3 +1,4 @@
+import { appProjectTemplateFiles } from "./app-project-template";
 import { capabilityContracts, protocolFor, type AppBundle, type ProductSpec } from "./contracts";
 
 export function sampleBundle(spec: ProductSpec): AppBundle {
@@ -37,7 +38,7 @@ export function sampleBundle(spec: ProductSpec): AppBundle {
         ]} /><p>Cash benchmark: 0% return. Fees use a simple two-transaction approximation at {inputs.query.data.feeBps} bps per transaction.</p>`;
   return {
     manifest: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       name: spec.name,
       protocol,
       permissions: [
@@ -49,11 +50,12 @@ export function sampleBundle(spec: ProductSpec): AppBundle {
       ],
     },
     files: {
+      ...appProjectTemplateFiles,
       "src/App.tsx": `import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
-import { cd80, useStoredValue, ${inputSchema} } from '@cd80/sdk';
-import { MetricCard, DataTable, AIExplanationPanel } from '@cd80/components';
+import { cd80, useStoredValue, ${inputSchema} } from '@/lib/cd80';
+import { MetricCard, DataTable, AIExplanationPanel } from '@/components/capabilities';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -110,5 +112,5 @@ export default function App() {
 }
 
 export function protocolInstructions(spec: ProductSpec) {
-  return `Application protocol ${spec.protocol}, version 2.\n${protocolFor(spec.protocol).rules.join("\n")}\nFinancial math runs in fixed platform capabilities, never in generated source. Use cd80.finance.portfolio, cd80.finance.screen, cd80.finance.backtest or cd80.finance.calculate(input,resultSchema) from @cd80/sdk when needed, declaring each capability used. This does not require financial UI for general sites. Public capability contracts: ${JSON.stringify(capabilityContracts)}. Return only schemaVersion 2 manifest and files: mandatory src/App.tsx exporting a default React component, optional src/styles.css and local src/components/**/*.ts(x). No index.html, app.js, calculations.js, package.json, build configuration or generated assets. The trusted entry supplies React, QueryClientProvider and readiness. Supported imports: react, lucide-react, zod, @tanstack/react-query, @cd80/sdk, @cd80/components, @/components/ui/<installed-component> and local source. Use stock Nova shadcn UI. SDK storage.read(key,zodSchema) validates persisted values and returns null when absent; useStoredValue(key,schema) returns {query,write}. Inputs use the 'inputs' key. Read '_provenance' and show actual provider, synthetic status, currency, coverage and warnings when displaying financial data. System-registered plugins use cd80.plugins.callParsed({pluginId,operationId,parameters},zodSchema); never invent plugin data. No direct network APIs, external imports, macros, secrets or dependency installation. Build the actual product with typed components and server capabilities.`;
+  return `Application protocol ${spec.protocol}, version 3.\n${protocolFor(spec.protocol).rules.join("\n")}\nFinancial math runs in fixed platform capabilities, never in generated source. Use cd80.finance.portfolio, cd80.finance.screen, cd80.finance.backtest or cd80.finance.calculate(input,resultSchema) from @/lib/cd80 when needed, declaring each capability used. This does not require financial UI for general sites. Public capability contracts: ${JSON.stringify(capabilityContracts)}. Use the actual TanStack Start checkout: package.json scripts bun run dev/build/check, src/routes for pages, src/router.tsx, src/styles.css and local shadcn/UI source. Generated server code runs in an isolated workspace; the platform capability bridge provides privileged operations in the browser. Keep metadata permissions in set_permissions, not a source file. Normal local imports and project configuration are supported. Use stock Nova shadcn UI. SDK storage.read(key,zodSchema) validates persisted values and returns null when absent; useStoredValue(key,schema) returns {query,write}. Inputs use the 'inputs' key. Read '_provenance' and show actual provider, synthetic status, currency, coverage and warnings when displaying financial data. System-registered plugins use cd80.plugins.callParsed({pluginId,operationId,parameters},zodSchema); never invent plugin data. No direct network APIs, external imports, macros, secrets or dependency installation. Build the actual product with typed components and server capabilities.`;
 }

@@ -7,7 +7,10 @@ import { clarify, generate, explain } from "../apps/web/src/server/models";
 // A local transport fixture checks SDK wiring. It does not prove live model access.
 const spec = protocols[0]!.defaultSpec;
 const bundle = sampleBundle(spec);
-bundle.files["src/styles.css"] = "";
+const sourceReply = {
+  manifest: bundle.manifest,
+  files: { "src/App.tsx": bundle.files["src/App.tsx"], "src/styles.css": "" },
+};
 const requests: any[] = [];
 const server = createServer(async (req, res) => {
   assert.equal(req.url, "/v1/responses");
@@ -19,7 +22,7 @@ const server = createServer(async (req, res) => {
   assert.equal(request.model, "gpt-6-luna");
   const schema = request.text?.format?.schema;
   const text = schema
-    ? JSON.stringify(schema.properties?.manifest ? bundle : spec)
+    ? JSON.stringify(schema.properties?.manifest ? sourceReply : spec)
     : "Fixture explanation of verified calculations.";
   const response = {
     id: "resp_fixture",

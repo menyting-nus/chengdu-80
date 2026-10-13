@@ -48,7 +48,7 @@ try {
   assert.ok(ready, "Test server failed to start");
   const spec = { ...protocols[0]!.defaultSpec, name: "Lifecycle test" };
   let app = await request({ action: "create", spec, mode: "sample" });
-  assert.ok(app.current?.verification.passed);
+  assert.ok(app.current?.verification.passed, JSON.stringify(app.preview?.verification.checks));
   assert.equal(app.preview, null);
   const first = app.current.id;
   await request({
@@ -137,7 +137,7 @@ try {
   assert.equal(app.current.id, goodId);
   pass("Invalid imported TSX blocks activation and preserves the working release");
   const custom = sampleBundle(spec);
-  custom.files["src/App.tsx"] = custom.files["src/App.tsx"].replace(
+  custom.files["src/App.tsx"] = (custom.files["src/App.tsx"] ?? "").replace(
     "{spec.name}</h1>",
     "Imported custom portfolio view</h1>",
   );
@@ -179,7 +179,7 @@ try {
   pass("Cross-origin writes and unsupported execution requests are rejected");
   const docs = await fetch(`http://127.0.0.1:${port}/api/docs`);
   assert.ok(docs.ok);
-  assert.equal(((await docs.json()) as { version: number }).version, 2);
+  assert.equal(((await docs.json()) as { version: number }).version, 3);
   pass("Public source contract and protocol documentation are available");
   console.log(`${passed} release-lifecycle integration checks passed.`);
 } finally {

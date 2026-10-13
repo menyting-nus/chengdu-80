@@ -8,8 +8,9 @@ export const formatSource = createServerFn({ method: "POST" })
     z.object({
       fileName: z
         .string()
-        .max(200)
-        .regex(/^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.(?:tsx?|js|html|css|json)$/),
+        .max(300)
+        .regex(/^(?:[\w$().[\]-]+\/)*[\w$().[\]-]+\.(?:tsx?|[cm]?js|html|css|jsonc?)$/)
+        .refine((name) => !name.split("/").some((segment) => segment === "." || segment === "..")),
       content: z.string().max(250000),
     }),
   )

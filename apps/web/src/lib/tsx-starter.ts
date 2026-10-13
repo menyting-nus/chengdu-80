@@ -1,17 +1,11 @@
 import type { AppBundle, ProductSpec } from "./contracts";
+import { appProjectTemplateFiles } from "./app-project-template";
 
-// Compiler entry, dependencies, SDK and shadcn sources are supplied by the platform.
-// Editable TSX is stored separately from the compiled browser assets.
+// Each app starts as a complete TanStack Start checkout. Metadata is persisted
+// separately; every displayed file is actual application source/configuration.
 export function tsxStarter(spec: ProductSpec): AppBundle {
   return {
-    manifest: { schemaVersion: 2, name: spec.name, protocol: spec.protocol, permissions: [] },
-    files: {
-      "src/App.tsx": `import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
-
-export default function App() {
-  return <Empty className="min-h-screen"><EmptyHeader><EmptyTitle>Start building your app</EmptyTitle></EmptyHeader></Empty>;
-}
-`,
-    },
+    manifest: { schemaVersion: 3, name: spec.name, protocol: spec.protocol, permissions: [] },
+    files: { ...appProjectTemplateFiles },
   };
 }

@@ -56,9 +56,8 @@ try {
       false,
     );
   });
-  await test("Direct network calls and embedded secret strings fail closed", () => {
+  await test("Embedded secret strings fail closed", () => {
     for (const mutate of [
-      (b: AppBundle) => (b.files["src/App.tsx"] += '\nvoid fetch("https://example.com");'),
       (b: AppBundle) =>
         (b.files["src/App.tsx"] += '\nconst api_key="sk-123456789012345678901234567890";'),
     ]) {

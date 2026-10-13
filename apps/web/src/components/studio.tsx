@@ -107,7 +107,7 @@ export function Studio() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("preview");
-  const [activeSourceFile, setActiveSourceFile] = useState<SourcePath>("src/App.tsx");
+  const [activeSourceFile, setActiveSourceFile] = useState<SourcePath>("src/routes/index.tsx");
   const [review, setReview] = useState<"checks" | "spec" | null>(null);
   const [imported, setImported] = useState<AppBundle | null>(null);
   const [providerResult, setProviderResult] = useState<unknown>(null);
@@ -148,14 +148,14 @@ export function Studio() {
   const release = app && (app.current ?? app.preview);
   const workspaceBundle = app?.workspace ?? release?.bundle;
   useEffect(() => {
-    setActiveSourceFile("src/App.tsx");
+    setActiveSourceFile("src/routes/index.tsx");
   }, [app?.id]);
   const displaySourceFile =
     workspaceBundle &&
     (Object.hasOwn(workspaceBundle.files, activeSourceFile) ||
       activeSourceFile.startsWith("starter/"))
       ? activeSourceFile
-      : "src/App.tsx";
+      : "src/routes/index.tsx";
   const refreshVersion = useRef(0);
   async function refresh() {
     if (reactive && snapshot) return snapshot;
@@ -206,7 +206,7 @@ export function Studio() {
     setChatKey(id ?? crypto.randomUUID());
     setTab("preview");
     setReview(null);
-    setActiveSourceFile("src/App.tsx");
+    setActiveSourceFile("src/routes/index.tsx");
     window.history.replaceState(null, "", id ? `/#app=${id}` : "/");
   }, []);
   useEffect(() => {
@@ -555,7 +555,6 @@ export function Studio() {
                   {workspaceBundle && (
                     <CodeWorkspace
                       bundle={workspaceBundle}
-                      appId={app.id}
                       workspaceId={`${app.id}:${app.revision}`}
                       activeFile={displaySourceFile}
                       onSelectFile={setActiveSourceFile}

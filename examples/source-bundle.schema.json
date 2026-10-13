@@ -7,7 +7,7 @@
       "properties": {
         "schemaVersion": {
           "type": "number",
-          "const": 2
+          "const": 3
         },
         "name": {
           "type": "string",
@@ -44,13 +44,23 @@
     "files": {
       "type": "object",
       "properties": {
-        "src/App.tsx": {
+        "package.json": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60000
+        },
+        "vite.config.ts": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60000
+        },
+        "tsconfig.json": {
           "type": "string",
           "minLength": 1,
           "maxLength": 60000
         }
       },
-      "required": ["src/App.tsx"],
+      "required": ["package.json", "vite.config.ts", "tsconfig.json"],
       "additionalProperties": {
         "type": "string",
         "maxLength": 60000

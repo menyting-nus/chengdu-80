@@ -9,6 +9,9 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 export default defineConfig({
   server: {
     port: 3001,
+    // Preview routes handle CORS themselves for their opaque iframe origin.
+    // Vite's default preflight handler would answer before those routes run.
+    cors: false,
   },
   resolve: {
     tsconfigPaths: true,

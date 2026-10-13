@@ -1,4 +1,5 @@
-import { compileTsx, inspectTsxSource } from "./tsx-compiler";
+import { prepareProject, buildProject, releaseWorkspace } from "./app-workspaces";
+import { bundleSchema } from "../lib/contracts";
 import { calculate } from "../lib/finance";
 import type { AppBundle, Check, ProductSpec, Verification } from "../lib/contracts";
 
@@ -35,7 +36,12 @@ export function inspectSource(bundle: AppBundle, spec: ProductSpec): Check[] {
         ),
       detail: "Potential credentials prevent release.",
     },
-    ...inspectTsxSource(bundle),
+    {
+      name: "Application project source",
+      passed: bundleSchema.safeParse(bundle).success,
+      detail:
+        "A complete application checkout with safe relative source paths; dependency caches and environment files stay outside persisted source.",
+    },
   ];
 }
 
@@ -44,23 +50,37 @@ export async function execute(bundle: AppBundle, input: unknown) {
   return calculate(bundle.manifest.protocol, input);
 }
 
-export async function verify(bundle: AppBundle, spec: ProductSpec): Promise<Verification> {
+export async function verify(
+  bundle: AppBundle,
+  spec: ProductSpec,
+  signal?: AbortSignal,
+): Promise<Verification> {
   const checks = inspectSource(bundle, spec);
   if (checks.every((check) => check.passed)) {
     try {
-      await compileTsx(bundle);
+      const workspace = await prepareProject(bundle, {
+        scope: `verify:${await sourceHash(bundle)}`,
+        pin: true,
+      });
+      try {
+        await buildProject(workspace, { signal });
+      } finally {
+        await releaseWorkspace(workspace);
+      }
       checks.push({
-        name: "React typecheck and browser build",
+        name: "Application build and checks",
         passed: true,
         detail:
-          "Strict TypeScript checking and the fixed React/shadcn browser build succeeded. Browser rendering is verified separately.",
+          "The project passed its standard bun run build and bun run check commands inside the isolated workspace. Browser behavior is verified separately.",
       });
     } catch (error) {
       checks.push({
-        name: "React typecheck and browser build",
+        name: "Application build and checks",
         passed: false,
         detail:
-          error instanceof Error ? error.message.slice(0, 12_000) : "React starter build failed",
+          error instanceof Error
+            ? error.message.slice(0, 12_000)
+            : "Application project build failed",
       });
     }
   }

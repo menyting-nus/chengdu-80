@@ -1,5 +1,6 @@
 import type { UIMessage } from "@tanstack/ai";
 import { z } from "zod";
+import { isProjectFile } from "./project-files";
 
 export const capabilities = [
   "market.prices",
@@ -78,35 +79,35 @@ export const bundleSchema = z
   .object({
     manifest: z
       .object({
-        schemaVersion: z.literal(2),
+        schemaVersion: z.literal(3),
         name: z.string().min(3).max(80),
         protocol: z.enum(protocolIds),
         permissions: z.array(z.enum(capabilities)).max(10),
       })
       .strict(),
     files: z
-      .object({ "src/App.tsx": z.string().min(1).max(60000) })
+      .object({
+        "package.json": z.string().min(1).max(60000),
+        "vite.config.ts": z.string().min(1).max(60000),
+        "tsconfig.json": z.string().min(1).max(60000),
+      })
       .catchall(z.string().max(60000)),
   })
   .strict()
   .superRefine((bundle, ctx) => {
     const paths = Object.keys(bundle.files);
     for (const path of paths) {
-      if (
-        !/^src\/(?:App\.tsx|styles\.css|components\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.tsx?)$/.test(
-          path,
-        )
-      )
+      if (!isProjectFile(path))
         ctx.addIssue({ code: "custom", path: ["files", path], message: "Unsupported source path" });
     }
     if (
-      paths.length > 44 ||
+      paths.length > 200 ||
       Object.values(bundle.files).reduce((size, content) => size + content.length, 0) > 200000
     )
       ctx.addIssue({
         code: "custom",
         path: ["files"],
-        message: "Source bundle exceeds 44 files or 200 KB",
+        message: "Source bundle exceeds 200 files or 200 KB",
       });
   });
 export type AppBundle = z.infer<typeof bundleSchema>;

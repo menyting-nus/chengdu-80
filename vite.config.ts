@@ -6,7 +6,7 @@ export default defineConfig({
   },
   lint: {
     // Exported app source is checked by the isolated starter compiler with its own aliases.
-    ignorePatterns: ["examples/**"],
+    ignorePatterns: ["examples/**", "apps/web/starter/project/**"],
     plugins: ["typescript", "unicorn", "oxc"],
     categories: {
       correctness: "error",

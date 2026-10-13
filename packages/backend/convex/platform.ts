@@ -112,15 +112,14 @@ function queueMessage(app: Application, messageId: string, content: string) {
   const id = boundedText(messageId, 200, "message ID");
   const text = boundedText(content, 12000, "message");
   const active = app.agentTurn;
-  if (
-    active &&
-    (active.status === "queued" || active.status === "running") &&
-    Date.now() - Date.parse(active.startedAt) < 5 * 60 * 1000
-  )
-    throw new Error("A conversation turn is already in progress");
   const messages = app.conversation ?? [];
   if (messages.some((message) => message.id === id)) throw new Error("Message already exists");
   const startedAt = new Date(Date.now()).toISOString();
+  if (active && (active.status === "queued" || active.status === "running")) {
+    app.turns = (app.turns ?? []).map((turn) =>
+      turn.id === active.id ? { ...turn, status: "stopped", completedAt: startedAt } : turn,
+    );
+  }
   app.conversation = [
     ...messages,
     { id, role: "user", createdAt: new Date(startedAt), parts: [{ type: "text", content: text }] },

@@ -88,7 +88,7 @@ export async function snapshot(access: Access, includeMessages = true, statusOnl
       modelConfigured: !!modelConfiguration(config).apiKey,
       tushareConfigured: !!config.TUSHARE_TOKEN,
       hostedDatabaseConfigured: !!config.VITE_CONVEX_URL,
-      runtime: "React browser preview with trusted server capabilities",
+      runtime: "Isolated TanStack Start application workspaces",
     },
   };
 }
@@ -97,12 +97,13 @@ export async function makeRelease(
   bundle: AppBundle,
   origin: Release["origin"],
   notes: string,
+  signal?: AbortSignal,
 ): Promise<Release> {
   return {
     id: crypto.randomUUID(),
     bundle,
     spec,
-    verification: await verify(bundle, spec),
+    verification: await verify(bundle, spec, signal),
     createdAt: new Date().toISOString(),
     origin,
     notes,

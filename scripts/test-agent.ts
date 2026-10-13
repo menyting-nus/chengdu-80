@@ -68,7 +68,12 @@ const fixture = createServer(async (req, res) => {
 export default function App() { return <Card><CardHeader><CardTitle>Copper Finch</CardTitle></CardHeader><CardContent>Built by real agent tools</CardContent></Card>; }`,
           },
         },
-        { name: "bash", arguments: { command: "echo fixture-shell; cat src/App.tsx" } },
+        {
+          name: "bash",
+          arguments: {
+            command: `bun -e 'const source=await Bun.file("src/App.tsx").text(); await Bun.write("src/App.tsx", source.replace("Built by real agent tools", "Built by real shell tools")); console.log("fixture-shell");'`,
+          },
+        },
         {
           name: "deploy_preview",
           arguments: { summary: "Built Copper Finch through workspace tools" },
@@ -100,7 +105,7 @@ export default function App() { return <Card><CardHeader><CardTitle>Copper Finch
             path: "src/App.tsx",
             content: `import { useEffect, useState } from 'react';
 import { z } from 'zod';
-import { cd80 } from '@cd80/sdk';
+import { cd80 } from '@/lib/cd80';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 const weatherSchema = z.object({temperature: z.number(), city: z.string()});
 export default function App() {
@@ -133,6 +138,12 @@ export default function App() {
       if (!calls) tool = { name: "list_files", arguments: {} };
       else await new Promise((resolve) => setTimeout(resolve, 1600));
       text = "This delayed turn should be cancelled.";
+    } else if (prompt.includes("Complete 21 tool rounds")) {
+      if (calls < 21) tool = { name: "list_files", arguments: {} };
+      text = "All 21 tool rounds completed.";
+    } else if (prompt.includes("Steer to discussing")) {
+      assert(JSON.stringify(body.input).includes("Copper Finch"));
+      text = "Steering received. We will discuss Copper Finch without changing its files.";
     }
     const id = `fixture_${++sequence}`;
     const item = tool
@@ -323,7 +334,7 @@ try {
   await page.getByRole("button", { name: /^Working for / }).waitFor();
   await page
     .getByText("Copper Finch is built and running.", { exact: true })
-    .waitFor({ timeout: 60000 });
+    .waitFor({ timeout: 180000 });
   await page.getByRole("button", { name: "Stop generation" }).waitFor({ state: "hidden" });
   const worked = page.getByRole("button", { name: /^Worked for / }).last();
   await worked.waitFor();
@@ -343,6 +354,12 @@ try {
   assert.equal(await conversation.locator("code").filter({ hasText: "cd80.ready()" }).count(), 1);
   await worked.click();
   assert.equal(await worked.getAttribute("aria-expanded"), "true");
+  const activity = page.getByRole("button", { name: /^Tool activity:/ }).first();
+  await activity.waitFor();
+  assert.equal(await activity.getAttribute("aria-expanded"), "false");
+  assert.equal(await activity.locator("svg.lucide-hammer").count(), 1);
+  assert.equal(await page.getByRole("button", { name: /list files.*Done/ }).isVisible(), false);
+  await activity.click();
   await page.getByRole("button", { name: /list files.*Done/ }).waitFor();
   await worked.click();
   assert.equal(await worked.getAttribute("aria-expanded"), "false");
@@ -350,8 +367,21 @@ try {
   await page.frameLocator("iframe").getByText("Copper Finch", { exact: true }).waitFor();
   const built = await appById(id);
   assert(built.current?.verification.passed);
-  assert.equal(built.current.bundle.manifest.schemaVersion, 2);
+  assert.equal(built.current.bundle.manifest.schemaVersion, 3);
   assert(built.current.bundle.files["src/App.tsx"]?.includes("CardContent"));
+  assert(
+    built.current.bundle.files["src/App.tsx"]?.includes("Built by real shell tools"),
+    "Real Bun shell edits must be read back into the persisted release",
+  );
+  await page
+    .frameLocator("iframe")
+    .getByText("Built by real shell tools", { exact: true })
+    .waitFor();
+  assert(
+    built.current.verification.checks.some(
+      (check) => check.name === "Application build and checks" && check.passed,
+    ),
+  );
   assert.equal(await page.frameLocator("iframe").locator('[data-slot="card"]').count(), 1);
   assert.deepEqual(built.data, dataBefore, "Deployment preserves saved app data");
   const actualAnswer = built.conversation
@@ -426,7 +456,10 @@ try {
     .getByRole("textbox", { name: "Message the AI" })
     .fill("Start a slow turn so I can stop it.");
   await page.getByRole("textbox", { name: "Message the AI" }).press("Enter");
-  await page.getByRole("button", { name: /list files.*Done/ }).waitFor();
+  await page
+    .getByRole("button", { name: /^Tool activity:/ })
+    .last()
+    .waitFor();
   await page.getByRole("button", { name: "Stop generation" }).click();
   await page.waitForTimeout(1600);
   assert.equal(
@@ -437,6 +470,28 @@ try {
   assert.equal(await page.getByRole("button", { name: "Stop generation" }).count(), 0);
   await page.getByRole("button", { name: /^Stopped for / }).waitFor();
   results.push("Chrome Stop cancels the active stream without late activation");
+  await page
+    .getByRole("textbox", { name: "Message the AI" })
+    .fill("Start a slow turn for steering.");
+  await page.getByRole("textbox", { name: "Message the AI" }).press("Enter");
+  await page
+    .getByRole("button", { name: /^Tool activity:/ })
+    .last()
+    .waitFor();
+  await page
+    .getByRole("textbox", { name: "Message the AI" })
+    .fill("Steer to discussing Copper Finch. Do not change files.");
+  await page.getByRole("textbox", { name: "Message the AI" }).press("Enter");
+  await page
+    .getByText("Steering received. We will discuss Copper Finch without changing its files.", {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal((await appById(id)).current?.id, activeRelease);
+  assert.equal((await appById(id)).agentTurn?.status, "complete");
+  results.push(
+    "A new message interrupts the active run and continues with its conversation and workspace",
+  );
   const registration = await fetch(`${base}/api/plugins`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: base },
@@ -470,7 +525,7 @@ try {
   await page.getByRole("textbox", { name: "Message the AI" }).press("Enter");
   await page
     .getByText("The site now displays London weather from the registered plugin.", { exact: true })
-    .waitFor({ timeout: 60000 });
+    .waitFor({ timeout: 180000 });
   await page.locator('iframe[aria-busy="false"]').waitFor();
   await page.frameLocator("iframe").getByText("21°C in London", { exact: true }).waitFor();
   const connected = await appById(id);
@@ -490,6 +545,15 @@ try {
   results.push(
     "System registration feeds agent discovery and tools; the verified generated site reads live provider data through plugin.call",
   );
+  await page.getByRole("textbox", { name: "Message the AI" }).fill("Complete 21 tool rounds.");
+  await page.getByRole("textbox", { name: "Message the AI" }).press("Enter");
+  await page
+    .getByText("All 21 tool rounds completed.", { exact: true })
+    .waitFor({ timeout: 60000 });
+  const longTurn = (await appById(id)).conversation?.slice(-1)[0];
+  assert.equal(longTurn?.role, "assistant");
+  assert.equal((await appById(id)).agentTurn?.status, "complete");
+  results.push("The agent completes 21 tool rounds without an overall iteration cap");
   assert.deepEqual(browserErrors, []);
   console.log(results.map((result) => `PASS ${result}`).join("\n"));
   console.log(

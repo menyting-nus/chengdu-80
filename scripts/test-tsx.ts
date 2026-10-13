@@ -1,38 +1,58 @@
 /// <reference lib="dom" />
-// Failure modes: broken TSX/types or forbidden imports activate; nested modules do
-// not resolve; supplied shadcn styles/SDK fail at runtime; readonly viewer mutates
-// source; failed updates lose data; iframe bypasses its network boundary.
-// Browser smoke checks are separate from published protocol verification.
+// Failure modes: the preview is a synthetic SPA instead of real Start SSR; server
+// function POST transport or typed capability RPC fails; project/shadcn sources
+// are virtual; app execution reads host secrets/files/network; failed builds
+// activate; signed preview grants cross app boundaries or survive expiry/deletion.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { chromium, type Browser } from "playwright";
 import { protocols, type Application, type AppBundle } from "../apps/web/src/lib/contracts";
 import { tsxStarter } from "../apps/web/src/lib/tsx-starter";
 
-const dataDir = await mkdtemp(join(tmpdir(), "cd80-tsx-test-"));
+const dataDir = await mkdtemp(join(tmpdir(), "cd80-start-test-"));
 const base = "http://127.0.0.1:3008";
 const artifacts = ".local/tsx-tests";
-const server = spawn("node", ["apps/web/server/node-entry.mjs"], {
-  env: {
-    ...process.env,
-    HOST: "127.0.0.1",
-    PORT: "3008",
-    CD80_LOCAL_MODE: "1",
-    CD80_DATA_DIR: dataDir,
-    OPENAI_API_KEY: "",
-    GLM_API_KEY: "",
-    MODEL_PROVIDER: "openai",
-  },
-  stdio: "ignore",
-});
-const results: string[] = [];
-const pageErrors: string[] = [],
-  externalRequests: string[] = [];
-let completed = false;
+const hostFile = join(dataDir, "host-secret.txt");
+const clockFile = join(dataDir, "clock-offset.txt");
+const clockModule = join(dataDir, "clock.mjs");
+await writeFile(hostFile, "host-only-test-canary");
+await writeFile(clockFile, "0");
+await writeFile(
+  clockModule,
+  `import {readFileSync} from 'node:fs';const realNow=Date.now.bind(Date);Date.now=()=>realNow()+Number(readFileSync(${JSON.stringify(clockFile)},'utf8'));`,
+);
+let server: ChildProcess | undefined;
 let browser: Browser | undefined;
+let completed = false;
+let log = "";
+const results: string[] = [];
+const pageErrors: string[] = [];
+const externalRequests: string[] = [];
+function start() {
+  server = spawn("node", ["--import", clockModule, "apps/web/server/node-entry.mjs"], {
+    env: {
+      ...process.env,
+      HOST: "127.0.0.1",
+      PORT: "3008",
+      CD80_LOCAL_MODE: "1",
+      CD80_DATA_DIR: dataDir,
+      OPENAI_API_KEY: "",
+      GLM_API_KEY: "",
+      MODEL_PROVIDER: "openai",
+      CD80_HOST_TEST_CANARY: "host-only-env-canary",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  server.stdout?.on("data", (chunk: Buffer) => {
+    log += chunk.toString();
+  });
+  server.stderr?.on("data", (chunk: Buffer) => {
+    log += chunk.toString();
+  });
+}
 async function request<T>(body?: unknown): Promise<T> {
   const response = await fetch(
     `${base}/api/platform`,
@@ -48,14 +68,24 @@ async function request<T>(body?: unknown): Promise<T> {
   assert(response.ok, JSON.stringify(result).slice(0, 1200));
   return result as T;
 }
+async function session(app: Application) {
+  assert(app.current);
+  const response = await fetch(
+    `${base}/api/app-preview-session?${new URLSearchParams({ appId: app.id, releaseId: app.current.id, nonce: "a".repeat(32) })}`,
+  );
+  assert.equal(response.status, 200, await response.clone().text());
+  return (await response.json()) as { url: string; expiresAt: number };
+}
 function pass(description: string) {
   results.push(description);
   console.log(`PASS ${description}`);
 }
 try {
   await mkdir(artifacts, { recursive: true });
+  start();
   let ready = false;
   for (let attempt = 0; attempt < 100; attempt++) {
+    assert(server?.exitCode === null, log.slice(-2000));
     try {
       if ((await fetch(`${base}/api/platform`)).ok) {
         ready = true;
@@ -64,28 +94,55 @@ try {
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  assert(ready, "Isolated test server did not start");
-  const spec = { ...protocols[0]!.defaultSpec, name: "React portfolio fixture" };
+  assert(ready, "Isolated built server did not start");
+  const spec = { ...protocols[0]!.defaultSpec, name: "Start project fixture" };
   const bundle: AppBundle = tsxStarter(spec);
-  assert(
-    Object.keys(bundle.files).every((name) => name === "src/App.tsx" || name === "src/styles.css"),
-  );
   bundle.manifest.permissions = ["storage.read", "storage.write", "finance.portfolio"];
+  for (const filename of [
+    "package.json",
+    "vite.config.ts",
+    "tsconfig.json",
+    "src/router.tsx",
+    "src/routes/__root.tsx",
+    "src/routes/index.tsx",
+    "src/styles.css",
+    "src/components/ui/button.tsx",
+    "src/lib/cd80.ts",
+  ])
+    assert(bundle.files[filename], filename);
+  assert(!Object.keys(bundle.files).some((name) => /^(starter|dist|node_modules)\//.test(name)));
   bundle.files["src/components/summary.tsx"] =
-    `export default function Summary({ value }: { value: number }) { return <output aria-label="Portfolio total">{value}</output>; }`;
-  bundle.files["src/App.tsx"] = `import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { cd80, portfolioInputSchema } from '@cd80/sdk';
+    `export default function Summary({value}:{value:number}){return <output aria-label="Portfolio total">{value}</output>;}`;
+  bundle.files["src/routes/about.tsx"] =
+    `import {createFileRoute} from '@tanstack/react-router';export const Route=createFileRoute('/about')({component:()=> <h1>Actual second Start route</h1>});`;
+  bundle.files["src/App.tsx"] = `import {useEffect,useState} from 'react';
+import {createServerFn} from '@tanstack/react-start';
+import {Button} from '@/components/ui/button';
+import {Card,CardHeader,CardTitle,CardContent} from '@/components/ui/card';
+import {cd80,portfolioInputSchema} from '@/lib/cd80';
 import Summary from './components/summary';
-export default function App() {
- const [total, setTotal] = useState<number | null>(null);
- const [count, setCount] = useState(0);
- useEffect(() => { void cd80.storage.read('inputs', portfolioInputSchema).then(async input => { if (input) setTotal((await cd80.finance.portfolio(input)).totalValue); }); }, []);
- return <Card className="m-4"><CardHeader><CardTitle>React portfolio fixture</CardTitle></CardHeader><CardContent><Summary value={total ?? 0}/><Button onClick={() => setCount(count + 1)}>Count {count}</Button></CardContent></Card>;
+const probe=createServerFn({method:'POST'}).handler(async()=>{
+ const fs=await import('node:fs/promises');
+ let hostFileAccessible=false;let hostEnvFileAccessible=false;let networkAccessible=false;
+ try{await fs.access(${JSON.stringify(hostFile)});hostFileAccessible=true;}catch{}
+ try{await fs.access(${JSON.stringify(resolve("apps/web/.env"))});hostEnvFileAccessible=true;}catch{}
+ try{await fetch(${JSON.stringify(base + "/api/platform")},{signal:AbortSignal.timeout(500)});networkAccessible=true;}catch{}
+ return {serverFunction:true,hostEnvironmentAccessible:Boolean(process.env.CD80_HOST_TEST_CANARY),hostFileAccessible,hostEnvFileAccessible,networkAccessible};
+});
+export default function App(){
+ const[total,setTotal]=useState<number|null>(null);const[count,setCount]=useState(0);
+ const[isolation,setIsolation]=useState<Awaited<ReturnType<typeof probe>>|null>(null);
+ const[error,setError]=useState('');
+ useEffect(()=>{void cd80.storage.read('inputs',portfolioInputSchema).then(async input=>{if(input)setTotal((await cd80.finance.portfolio(input)).totalValue);}).catch(error=>setError(String(error)));},[]);
+ return <Card className="m-4"><CardHeader><CardTitle>Actual TanStack Start SSR</CardTitle></CardHeader><CardContent>
+ <Summary value={total??0}/><Button onClick={()=>setCount(count+1)}>Count {count}</Button>
+ <Button onClick={()=>{void probe().then(setIsolation).catch(error=>setError(String(error)));}}>Run server function</Button>
+ <Button onClick={()=>{void cd80.storage.write('note','saved by real SDK').then(()=>setError('Saved')).catch(error=>setError(String(error)));}}>Save note</Button>
+ {isolation?<pre aria-label="Isolation result">{JSON.stringify(isolation)}</pre>:null}<p role="status">{error}</p>
+ </CardContent></Card>;
 }`;
   let app = await request<Application>({ action: "import", bundle, spec });
-  assert(app.current?.verification.passed, JSON.stringify(app).slice(0, 6000));
+  assert(app.current?.verification.passed, JSON.stringify(app.preview?.verification.checks));
   const releaseId = app.current.id;
   const expected = await request<{ totalValue: number }>({
     action: "rpc",
@@ -94,38 +151,22 @@ export default function App() {
     capability: "finance.portfolio",
     input: app.data.inputs,
   });
-  const assetResponse = await fetch(
-    `${base}/api/app-assets?${new URLSearchParams({ appId: app.id, releaseId })}`,
-  );
-  assert(assetResponse.ok);
-  const assets = (await assetResponse.json()) as { javascript: string; css: string };
-  assert(assets.javascript.length > 1000 && assets.css.length > 1000);
-  await writeFile(`${artifacts}/compiled-app.js`, assets.javascript);
-  pass(
-    "React-only starter passes source policy, type checking and compilation; compiled assets load",
-  );
-
-  const sourceResponse = await fetch(`${base}/api/app-source?appId=${app.id}`);
-  assert(sourceResponse.ok, "Actual starter source must be available to the owning workspace");
-  const starter = (await sourceResponse.json()) as { files: Record<string, string> };
-  assert.equal(
-    starter.files["starter/ui/components/button.tsx"],
-    await readFile("packages/ui/src/components/button.tsx", "utf8"),
-  );
-  assert.equal(
-    starter.files["starter/ui/styles/globals.css"],
-    await readFile("packages/ui/src/styles/globals.css", "utf8"),
-  );
-  assert.equal(
-    starter.files["starter/main.tsx"],
-    await readFile("apps/web/starter/main.tsx.template", "utf8"),
-  );
-  assert(starter.files["starter/package.json"]?.includes('"catalog"'));
+  const preview = await session(app);
+  const html = await fetch(base + preview.url);
+  assert.equal(html.status, 200, await html.clone().text());
+  const ssr = await html.text();
   assert(
-    !Object.keys(starter.files).some((name) => name.includes(".env") || name.includes("dist/")),
+    ssr.includes("Actual TanStack Start SSR"),
+    "SSR response must contain the rendered app, not just an empty entry",
   );
+  assert(ssr.includes('data-slot="card"'));
+  assert(ssr.includes(preview.url), "Start asset URLs must use the signed preview base");
+  const about = await fetch(base + preview.url + "about");
+  assert.equal(about.status, 200);
+  assert((await about.text()).includes("Actual second Start route"));
+  await writeFile(`${artifacts}/ssr.html`, ssr);
   pass(
-    "Starter source exposes exact shadcn, Tailwind, entry and dependency files without env or compiled output",
+    "Actual TanStack Start server renders app HTML and a second file route through the signed preview proxy",
   );
 
   browser = await chromium.launch({
@@ -133,63 +174,58 @@ export default function App() {
     headless: true,
   });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
-  const pageErrors: string[] = [],
-    externalRequests: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.stack ?? error.message));
   page.on("request", (req) => {
     if (/^https?:/.test(req.url()) && !req.url().startsWith(base)) externalRequests.push(req.url());
   });
   await page.goto(`${base}/#app=${app.id}`);
   const frame = page.frameLocator("iframe");
+  await frame.getByRole("button", { name: "Count 0", exact: true }).waitFor({ timeout: 120000 });
+  await page.locator('iframe[aria-busy="false"]').waitFor();
   await frame
-    .getByRole("button", { name: "Count 0", exact: true })
-    .waitFor()
-    .catch(async (error: unknown) => {
-      await page.screenshot({ path: `${artifacts}/failed-preview.png`, fullPage: true });
-      console.error({
-        pageErrors,
-        body: await page.locator("body").innerText(),
-        frames: await Promise.all(
-          page.frames().map(async (entry) => ({
-            url: entry.url(),
-            body: await entry
-              .locator("body")
-              .innerText()
-              .catch(() => "unavailable"),
-          })),
-        ),
-      });
-      throw error;
-    });
-  await page.waitForFunction(() => {
-    const iframe = document.querySelector("iframe");
-    return iframe?.getAttribute("aria-busy") === "false";
-  });
-  await frame
-    .getByRole("status", { name: "Portfolio total" })
+    .locator('output[aria-label="Portfolio total"]')
     .filter({ hasText: String(expected.totalValue) })
     .waitFor();
-  assert.equal(await frame.locator('[data-slot="card"]').count(), 1);
   const button = frame.getByRole("button", { name: "Count 0", exact: true });
   assert.equal(await button.getAttribute("data-slot"), "button");
   const appearance = await button.evaluate((element) => ({
     background: getComputedStyle(element).backgroundColor,
-    borderRadius: getComputedStyle(element).borderRadius,
+    radius: getComputedStyle(element).borderRadius,
   }));
   assert.notEqual(appearance.background, "rgba(0, 0, 0, 0)");
-  assert.notEqual(appearance.borderRadius, "0px");
+  assert.notEqual(appearance.radius, "0px");
   await button.click();
   await frame.getByRole("button", { name: "Count 1", exact: true }).waitFor();
-  await page.screenshot({ path: `${artifacts}/react-preview.png`, fullPage: true });
+  await frame.getByRole("button", { name: "Run server function", exact: true }).click();
+  const isolation = frame.locator('pre[aria-label="Isolation result"]');
+  await isolation.waitFor().catch(async (error: unknown) => {
+    await page.screenshot({ path: `${artifacts}/server-function-failure.png`, fullPage: true });
+    console.error({ frameBody: await frame.locator("body").innerText(), pageErrors });
+    throw error;
+  });
+  assert.deepEqual(JSON.parse(await isolation.innerText()), {
+    serverFunction: true,
+    hostEnvironmentAccessible: false,
+    hostFileAccessible: false,
+    hostEnvFileAccessible: false,
+    networkAccessible: false,
+  });
+  await frame.getByRole("button", { name: "Save note", exact: true }).click();
+  await frame.getByRole("status").filter({ hasText: "Saved" }).waitFor();
+  const snapshot = await request<{ apps: Application[] }>();
+  assert.equal(snapshot.apps.find((item) => item.id === app.id)?.data.note, "saved by real SDK");
+  await page.screenshot({ path: `${artifacts}/start-preview.png`, fullPage: true });
   pass(
-    "Real React nested component, supplied shadcn styles and typed portfolio SDK render and interact",
+    "Chrome hydrates stock shadcn UI, runs real Start POST server functions, and calls financial/storage capabilities",
+  );
+  pass(
+    "Generated server functions cannot access host environment, host files, or host loopback network",
   );
 
-  assert.equal(externalRequests.length, 0, externalRequests.join("\n"));
-  const iframe = page.frames().find((entry) => entry !== page.mainFrame());
-  assert(iframe);
-  assert.equal(
-    await iframe.evaluate(async () => {
+  const child = page.frames().find((entry) => entry !== page.mainFrame());
+  assert(child);
+  assert(
+    await child.evaluate(async () => {
       try {
         await fetch("https://example.com/blocked");
         return false;
@@ -197,79 +233,82 @@ export default function App() {
         return true;
       }
     }),
-    true,
-    "Opaque preview must block direct networking even outside source policy",
   );
-  pass("Preview CSP blocks direct network access without unsafe-eval or connect exceptions");
   await page.getByRole("tab", { name: "Code", exact: true }).click();
-  const editor = page.getByRole("textbox", { name: "src/App.tsx source (read-only)", exact: true });
-  await editor.waitFor();
-  assert.equal(await editor.getAttribute("readonly"), "true");
-  await page.waitForFunction(
-    () =>
-      new Set(
-        Array.from(document.querySelectorAll(".view-line span")).map(
-          (element) => getComputedStyle(element).color,
-        ),
-      ).size > 1,
-  );
-  await page.getByRole("button", { name: "summary.tsx", exact: true }).click();
+  await page.getByRole("button", { name: "App.tsx", exact: true }).click();
   await page
-    .getByRole("textbox", { name: "src/components/summary.tsx source (read-only)", exact: true })
+    .getByRole("textbox", { name: "src/App.tsx source (read-only)", exact: true })
     .waitFor();
-  await page.locator(".view-lines").filter({ hasText: "Portfolio total" }).waitFor();
-  await page.screenshot({ path: `${artifacts}/tsx-source-tree.png`, fullPage: true });
+  await page.getByRole("button", { name: "package.json", exact: true }).click();
+  const packageViewer = page.getByRole("textbox", {
+    name: "package.json source (read-only)",
+    exact: true,
+  });
+  await packageViewer.waitFor();
+  assert.equal(await packageViewer.getAttribute("readonly"), "true");
+  await page.screenshot({ path: `${artifacts}/project-source-tree.png`, fullPage: true });
+  assert(!(await page.locator("aside").allTextContents()).join("\n").includes("starter/"));
+  pass(
+    "Code browser shows actual project files and read-only highlighted source without synthetic compiler folders",
+  );
+
+  const invalid = structuredClone(bundle);
+  invalid.files["src/App.tsx"] =
+    "export default function App(){const value:number='wrong';return <div>{value}</div>}";
+  app = await request<Application>({ action: "import", appId: app.id, bundle: invalid, spec });
+  assert.equal(app.current?.id, releaseId);
+  assert.equal(app.preview?.verification.passed, false);
+  assert.equal(app.data.note, "saved by real SDK");
+  pass("Failed strict TypeScript build preserves the verified release and saved data");
+
+  const otherSpec = { ...spec, name: "Other project fixture" };
+  const otherBundle = structuredClone(bundle);
+  otherBundle.manifest.name = otherSpec.name;
+  otherBundle.files["src/App.tsx"] =
+    "export default function App(){return <h1>Other app only</h1>}";
+  const other = await request<Application>({
+    action: "import",
+    bundle: otherBundle,
+    spec: otherSpec,
+  });
+  const otherPreview = await session(other);
+  const otherHtml = await fetch(base + otherPreview.url);
+  assert.equal(otherHtml.status, 200);
+  assert((await otherHtml.text()).includes("Other app only"));
+  const token = preview.url.split("/")[3]!;
+  const altered = token.slice(0, -1) + (token.endsWith("a") ? "b" : "a");
+  assert.equal((await fetch(base + preview.url.replace(token, altered))).status, 404);
+  const crossAppAttempt = await fetch(
+    base + preview.url + `?appId=${other.id}&releaseId=${other.current!.id}`,
+  );
+  assert.equal(crossAppAttempt.status, 200);
+  assert(!(await crossAppAttempt.text()).includes("Other app only"));
+  pass(
+    "Signed preview URLs resist tampering and cannot select another app through query parameters",
+  );
+
+  await writeFile(clockFile, String(21 * 60_000));
+  assert.equal((await fetch(base + preview.url)).status, 404);
+  const renewed = await session(app);
+  assert.equal((await fetch(base + renewed.url)).status, 200);
+  const persisted = JSON.parse(await readFile(join(dataDir, "apps.json"), "utf8")) as Application[];
+  await writeFile(
+    join(dataDir, "apps.json"),
+    JSON.stringify(persisted.filter((item) => item.id !== app.id)),
+  );
+  assert.equal((await fetch(base + renewed.url)).status, 404);
+  pass("Expired grants require renewal and deleting an app revokes an existing signed preview");
   assert(
     externalRequests.every((url) => url === "https://example.com/blocked"),
     externalRequests.join("\n"),
   );
   assert.deepEqual(pageErrors, []);
-  pass(
-    "Nested file tree and highlighted TSX readonly viewer load without browser errors or external dependencies",
-  );
-
-  await request({
-    action: "rpc",
-    appId: app.id,
-    releaseId,
-    capability: "storage.write",
-    input: { key: "note", value: "retained" },
-  });
-  for (const [label, source] of [
-    [
-      "type error",
-      "export default function App() { const value: number = 'wrong'; return <div>{value}</div>; }",
-    ],
-    [
-      "host import",
-      "import fs from 'node:fs'; export default function App(){return <div>{String(fs)}</div>}",
-    ],
-    [
-      "path escape",
-      "import secret from '../../../.env'; export default function App(){return <div>{secret}</div>}",
-    ],
-    ["import meta", "export default function App(){return <div>{String(import.meta.env)}</div>}"],
-    [
-      "macro import",
-      "import text from './components/summary' with {type:'macro'}; export default function App(){return <div>{String(text)}</div>}",
-    ],
-    [
-      "direct network",
-      "export default function App(){void fetch('https://example.com'); return <div>bad</div>}",
-    ],
-  ] as const) {
-    const bad = structuredClone(bundle);
-    bad.files["src/App.tsx"] = source;
-    app = await request<Application>({ action: "import", appId: app.id, bundle: bad, spec });
-    assert.equal(app.current?.id, releaseId, label);
-    assert.equal(app.preview?.verification.passed, false, label);
-    assert.equal(app.data.note, "retained", label);
-  }
-  pass(
-    "Invalid TSX, host/path imports, macros, import.meta and direct network source block activation and preserve data",
-  );
   completed = true;
+} catch (error) {
+  console.error(log.slice(-5000));
+  throw error;
 } finally {
+  await mkdir(artifacts, { recursive: true });
   await writeFile(
     `${artifacts}/results.json`,
     JSON.stringify(
@@ -279,6 +318,14 @@ export default function App() {
     ),
   );
   await browser?.close();
-  server.kill("SIGTERM");
+  if (server && server.exitCode === null)
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => server!.kill("SIGKILL"), 5000);
+      server!.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      server!.kill("SIGTERM");
+    });
   await rm(dataDir, { recursive: true, force: true });
 }

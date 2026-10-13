@@ -6,7 +6,10 @@ import { sampleBundle } from "../apps/web/src/lib/samples";
 
 const spec = protocols[0]!.defaultSpec;
 const bundle = sampleBundle(spec);
-bundle.files["src/styles.css"] = "";
+const sourceReply = {
+  manifest: bundle.manifest,
+  files: { "src/App.tsx": bundle.files["src/App.tsx"], "src/styles.css": "" },
+};
 const requests: any[] = [];
 let invalid = false;
 let fenced = false;
@@ -24,7 +27,7 @@ const server = createServer(async (req, res) => {
   assert.deepEqual(body.thinking, { type: "enabled" });
   const generating = body.messages.some((message: any) => message.content.includes('"manifest"'));
   const json = body.response_format
-    ? JSON.stringify(invalid ? { invalid: true } : generating ? bundle : spec)
+    ? JSON.stringify(invalid ? { invalid: true } : generating ? sourceReply : spec)
     : "Explanation of verified calculations.";
   let text = fenced
     ? "```json\n" +

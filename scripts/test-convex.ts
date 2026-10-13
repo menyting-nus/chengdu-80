@@ -23,7 +23,10 @@ const snapshot: {
 assert.equal(snapshot.status.local, false);
 assert.equal(snapshot.status.demo, true);
 assert.equal(snapshot.status.modelConfigured, true);
-const app = snapshot.apps.find((candidate) => candidate.current && candidate.conversation?.length);
+const app = snapshot.apps.find(
+  (candidate) =>
+    candidate.current?.bundle.manifest.schemaVersion === 3 && candidate.conversation?.length,
+);
 assert(app?.current);
 const originalRelease = app.current.id;
 const results: string[] = [];
@@ -223,14 +226,17 @@ try {
     messageId: queuedId,
     content: "Queued delete race",
   });
-  await assert.rejects(
-    client.mutation(api.platform.sendMessage, {
-      appId: fixtureId,
-      messageId: crypto.randomUUID(),
-      content: "Duplicate active turn",
-    }),
-    /already in progress/,
-  );
+  const steeringId = crypto.randomUUID();
+  const steered = await client.mutation(api.platform.sendMessage, {
+    appId: fixtureId,
+    messageId: steeringId,
+    content: "Steer the active turn",
+  });
+  assert.equal(steered.agentTurn?.id, steeringId);
+  assert.equal(steered.agentTurn?.status, "queued");
+  assert.equal(steered.turns?.find((turn) => turn.id === queuedId)?.status, "stopped");
+  assert(steered.conversation?.some((message) => message.id === queuedId));
+  results.push("Steering replaces the active turn atomically and preserves its saved conversation");
   await sender.getByRole("button", { name: `Delete ${title}`, exact: true }).click();
   await sender.getByRole("button", { name: "Cancel", exact: true }).click();
   assert(await client.query(api.platform.studioApp, { appId: fixtureId }));

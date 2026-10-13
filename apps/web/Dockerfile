@@ -4,6 +4,8 @@
 # Build from the repo root so workspace packages resolve:
 #   docker build -t chengdu80-web -f apps/web/Dockerfile .
 
+FROM node:24-bookworm-slim AS node-runtime
+
 FROM oven/bun:1 AS install
 WORKDIR /repo
 COPY package.json bun.lock ./
@@ -39,14 +41,16 @@ RUN bunx --no-install vp run --filter web build
 # The built server.js externalizes npm dependencies (React, TanStack, etc.),
 # so the runtime image still needs node_modules alongside dist/.
 FROM oven/bun:1 AS runtime
+# Generated framework code runs in private Linux namespaces, never in this server process.
+RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap util-linux bash && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/apps/web/node_modules ./apps/web/node_modules
 COPY --from=build /repo/apps/web/dist ./apps/web/dist
 COPY --from=build /repo/apps/web/server ./apps/web/server
 COPY --from=build /repo/apps/web/starter ./apps/web/starter
-COPY --from=build /repo/apps/web/src/lib/generated-app ./apps/web/src/lib/generated-app
 COPY --from=build /repo/apps/web/src/lib/contracts.ts ./apps/web/src/lib/contracts.ts
 COPY --from=build /repo/packages/ui/src ./packages/ui/src
 COPY --from=build /repo/packages/ui/node_modules ./packages/ui/node_modules

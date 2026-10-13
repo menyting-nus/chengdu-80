@@ -15,9 +15,20 @@ import {
   type ChatFetcher,
   type UIMessage,
 } from "@tanstack/ai-react";
-import { ArrowUp, Check, ChevronRight, Copy, Square, Terminal, Upload, X } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  ChevronRight,
+  Copy,
+  Hammer,
+  Square,
+  Terminal,
+  Upload,
+  X,
+} from "lucide-react";
 import { Separator } from "@web-starter/ui/components/separator";
 import { Button } from "@web-starter/ui/components/button";
+import { cn } from "@web-starter/ui/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@web-starter/ui/components/alert";
 import { Bubble, BubbleContent } from "@web-starter/ui/components/bubble";
 import {
@@ -83,6 +94,22 @@ type AgentChatProps = {
 
 type Part = UIMessage["parts"][number];
 type ToolPart = Extract<Part, { type: "tool-call" }>;
+type ToolGroup = { type: "tool-group"; calls: ToolPart[] };
+
+// Keep each uninterrupted run of tools in one bucket between assistant text.
+function groupToolParts(parts: Part[]) {
+  const grouped: (Part | ToolGroup)[] = [];
+  for (const part of parts) {
+    if (part.type === "tool-call") {
+      const previous = grouped.at(-1);
+      if (previous?.type === "tool-group") previous.calls.push(part);
+      else grouped.push({ type: "tool-group", calls: [part] });
+    } else if ((part.type === "text" || part.type === "thinking") && part.content) {
+      grouped.push(part);
+    }
+  }
+  return grouped;
+}
 
 function inspect(value: unknown) {
   const text = typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "");
@@ -180,6 +207,42 @@ function CopyAnswer({ text }: { text: string }) {
   );
 }
 
+function ToolActivityGroup({
+  calls,
+  results,
+}: {
+  calls: ToolPart[];
+  results: Map<string, Extract<Part, { type: "tool-result" }>>;
+}) {
+  const running = calls.find(
+    (call) =>
+      call.state !== "complete" &&
+      call.state !== "error" &&
+      results.get(call.id)?.state !== "complete" &&
+      results.get(call.id)?.state !== "error",
+  );
+  return (
+    <Collapsible className="min-w-0">
+      <CollapsibleTrigger
+        render={<Button variant="link" size="sm" className="h-auto justify-start p-0" />}
+        aria-label={`Tool activity: ${calls.length} ${calls.length === 1 ? "call" : "calls"}`}
+      >
+        <Hammer data-icon="inline-start" />
+        <span className="min-w-0 truncate">
+          {running ? `${running.name.replaceAll("_", " ")} · ` : ""}
+          {calls.length} {calls.length === 1 ? "tool call" : "tool calls"}
+        </span>
+        <ChevronRight data-icon="inline-end" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="min-w-0 py-2">
+        {calls.map((call) => (
+          <ToolActivity key={call.id} part={call} result={results.get(call.id)} />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 function ConversationMessage({
   message,
   results,
@@ -194,9 +257,7 @@ function ConversationMessage({
     .filter((part) => part.type === "text")
     .map((part) => part.content)
     .join("\n\n");
-  const visibleParts = message.parts.filter(
-    (part) => part.type === "text" || part.type === "tool-call" || part.type === "thinking",
-  );
+  const visibleParts = groupToolParts(message.parts);
   if (!visibleParts.length) return null;
   return (
     <Message align={user ? "end" : "start"}>
@@ -226,8 +287,10 @@ function ConversationMessage({
                 </BubbleContent>
               </Bubble>
             ) : null;
-          if (part.type === "tool-call")
-            return <ToolActivity key={part.id} part={part} result={results.get(part.id)} />;
+          if (part.type === "tool-group")
+            return (
+              <ToolActivityGroup key={part.calls[0]!.id} calls={part.calls} results={results} />
+            );
           if (part.type === "thinking" && part.content)
             return (
               <Collapsible key={index}>
@@ -409,7 +472,11 @@ function LocalAgentChat(props: AgentChatProps) {
   }, [chat.isLoading]);
   const submit = () => {
     const text = prompt.trim();
-    if (!text || chat.isLoading || props.disabled || !props.connected) return;
+    if (!text || props.disabled || !props.connected) return;
+    if (chat.isLoading) {
+      setStoppedTurn(conversationTurns(chat.messages).at(-1)?.user.id);
+      chat.stop();
+    }
     setPrompt("");
     setLocalError(undefined);
     void chat
@@ -478,10 +545,14 @@ function ConvexAgentChat(props: AgentChatProps) {
   );
   async function submit() {
     const content = prompt.trim();
-    if (!content || loading || props.disabled || !props.connected) return;
+    if (!content || props.disabled || !props.connected) return;
+    if (requesting && !appId.current) return;
     // Existing threads hydrate after the initial status-only page bootstrap.
     // Read their subscribed identity before deciding to create a new workspace.
     appId.current = callbacks.current.app?.id ?? appId.current;
+    // Interrupt this tab's transport; Convex atomically records the replacement
+    // turn and Node waits for the previous writer to finish before continuing.
+    controller.current?.abort();
     const abort = new AbortController();
     controller.current = abort;
     setRequesting(true);
@@ -705,7 +776,7 @@ function AgentChatView({
               <Upload />
             </InputGroupButton>
             <span className="min-w-0 truncate text-xs">{props.modelName}</span>
-            {loading ? (
+            {loading && (
               <InputGroupButton
                 className="ml-auto"
                 size="icon-sm"
@@ -714,9 +785,10 @@ function AgentChatView({
               >
                 <Square />
               </InputGroupButton>
-            ) : (
+            )}
+            {(!loading || !!prompt.trim()) && (
               <InputGroupButton
-                className="ml-auto"
+                className={cn(!loading && "ml-auto")}
                 size="icon-sm"
                 variant="default"
                 aria-label="Send message"

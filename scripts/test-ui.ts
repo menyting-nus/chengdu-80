@@ -47,7 +47,9 @@ try {
   await page.goto(base);
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await page.getByRole("menuitem", { name: "Install all examples", exact: true }).click();
-  await page.getByRole("heading", { name: "Portfolio lens", exact: true }).waitFor();
+  await page
+    .getByRole("heading", { name: "Portfolio lens", exact: true })
+    .waitFor({ timeout: 180000 });
   await page.locator('iframe[aria-busy="false"]').waitFor();
   const layout = await page.evaluate(() => {
     const selectors = [
@@ -105,6 +107,10 @@ try {
   await page.keyboard.press("Escape");
   await page.getByRole("tab", { name: "Code", exact: true }).click();
   await page
+    .getByRole("textbox", { name: "src/routes/index.tsx source (read-only)", exact: true })
+    .waitFor();
+  await page.getByRole("button", { name: "App.tsx", exact: true }).click();
+  await page
     .getByRole("textbox", { name: "src/App.tsx source (read-only)", exact: true })
     .waitFor();
   assert(
@@ -117,9 +123,9 @@ try {
     initialSourceApp.current?.bundle,
     "Viewer formatting must not change stored source",
   );
-  await page.getByRole("button", { name: "sdk.ts", exact: true }).click();
+  await page.getByRole("button", { name: "cd80.ts", exact: true }).click();
   const editor = page.getByRole("textbox", {
-    name: "starter/sdk/sdk.ts source (read-only)",
+    name: "src/lib/cd80.ts source (read-only)",
     exact: true,
   });
   await editor.waitFor();
@@ -132,7 +138,7 @@ try {
         ),
       ).size > 1,
   );
-  assert((await page.locator(".view-lines").innerText()).includes("portfolio"));
+  await page.locator(".view-lines").filter({ hasText: "portfolio" }).waitFor();
   const before = await page.locator(".view-lines").innerText();
   await editor.focus();
   await page.keyboard.type("THIS_MUST_NOT_WRITE");

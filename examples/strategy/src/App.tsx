@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { cd80, useStoredValue, backtestInputSchema } from "@cd80/sdk";
-import { MetricCard, DataTable, AIExplanationPanel } from "@cd80/components";
+import { cd80, useStoredValue, backtestInputSchema } from "@/lib/cd80";
+import { MetricCard, DataTable, AIExplanationPanel } from "@/components/capabilities";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
