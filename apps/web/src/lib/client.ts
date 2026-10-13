@@ -1,6 +1,13 @@
-export async function api<T = any>(body?: unknown): Promise<T> {
+export async function api<T = any>(
+  body?: unknown,
+  options?: { summary?: boolean; statusOnly?: boolean },
+): Promise<T> {
   const response = await fetch(
-    "/api/platform",
+    options?.statusOnly
+      ? "/api/platform?status=1"
+      : options?.summary
+        ? "/api/platform?summary=1"
+        : "/api/platform",
     body
       ? {
           method: "POST",

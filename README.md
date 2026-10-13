@@ -8,12 +8,20 @@ The prototype is deployed at [Chengdu80 studio](https://chengdu80-web-live-anant
 
 ```bash
 bun install --frozen-lockfile
-bun run dev:local
+bun run dev:convex
 ```
 
-Open http://127.0.0.1:3001. Local mode has one demo owner and persists apps in `.local/apps.json`. The server binds to loopback; this is not hosted authentication.
+Open http://127.0.0.1:3001. This starts the real local Convex backend and the Vite development server, with a shared demo workspace and login deferred. No Docker or Convex Cloud account is required. Convex stores apps, releases and plugin registrations. Thread titles and turn state live in `threads`; complete TanStack AI messages live in `messages`, indexed by thread and order. Each message retains its ordered text, thinking and tool parts. The sidebar subscribes to thread summaries, while the workspace subscribes only to the selected app and its messages. Backend state lives in `packages/backend/.convex/local/`; keep it to preserve data across restarts.
 
-The launcher reads `apps/web/.env`, `platform/.env`, then the workspace `../.env`. Non-empty workspace values take precedence. Secrets stay server-side.
+To import an existing file-backed workspace once, use `bun run dev:convex --import-files .local/review-instance`. Existing IDs are skipped and source files are retained. `CD80_PORT=3002` selects a different frontend port.
+
+Existing embedded chat histories can be migrated through the trusted `platform.migrateChatStorage` action. It is idempotent and preserves source files and message IDs. Creating threads, saving prompts, renaming, stopping and deleting use controlled Convex mutations. Every tab, including the sender, renders the same subscribed message records. The sidebar delete action confirms removal of a thread, its messages and its associated app.
+
+Generation runs through TanStack AI on the Node server after it claims a saved queued turn. SSE is consumed only for execution status and errors; streaming message text is checkpointed to Convex once per second and flushed when the turn ends. Model context is compacted separately from stored conversation history. Verification, shell tools, external plugin calls and permission-checked app runtime operations continue on Node.
+
+`bun run dev:local` remains an explicit file-backed prototype launcher for isolated fixture tests. It does not use Convex.
+
+The launcher reads `apps/web/.env`, root `.env`, then the workspace `../.env`. Non-empty workspace values take precedence. Secrets stay server-side.
 
 ```bash
 bun run setup:env      # Creates ../.env only when absent, with local secrets
@@ -46,6 +54,8 @@ Releases require syntax, contract, permission, credential-pattern, numerical fix
 Nine capabilities cover normalized market data, reusable financial functions, custom calculations, shared storage and managed AI. New providers require adapters. `_provenance` is reserved; edited inputs are labelled user-entered. AI explanations use server-recomputed saved inputs.
 
 ## Verification
+
+With the local Convex-backed dev server running and an existing generated conversation, `bun run test:convex` checks normalized storage, migration, access checks, direct mutations, reactive messages across two Chrome tabs, transport failure recovery and thread deletion. It also verifies that client-bound SSE text cannot override the Convex transcript. It makes one live model call and writes screenshots/results to `.local/convex-tests/`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when using an existing Chrome installation.
 
 ```bash
 bun run test:prototype       # 12 financial, sandbox, hash and persistence checks
