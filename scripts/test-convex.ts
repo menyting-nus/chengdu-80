@@ -52,9 +52,9 @@ assert.equal("chatTitle" in stored.payload, false);
 assert((await rows("threads")).some((row) => row.threadId === app.id));
 assert((await rows("messages")).some((row) => row.threadId === app.id));
 results.push("Apps, threads and messages are separate Convex records");
-await assert.rejects(
-  client.query(api.platform.studioMessages, { appId: crypto.randomUUID() }),
-  /not found/i,
+assert.deepEqual(
+  await client.query(api.platform.studioMessages, { appId: crypto.randomUUID() }),
+  [],
 );
 await assert.rejects(
   client.action(api.platform.getDemo, { appId: app.id, serverKey: "invalid" }),
@@ -66,6 +66,8 @@ const browser = await chromium.launch({
   headless: process.env.CD80_E2E_HEADED !== "1",
 });
 const errors: string[] = [];
+let fixtureId: string | undefined;
+let releaseHeldRequest: (() => void) | undefined;
 try {
   const sender = await browser.newPage({ viewport: { width: 1728, height: 1080 } });
   const observer = await browser.newPage({ viewport: { width: 1728, height: 1080 } });
@@ -78,6 +80,25 @@ try {
       () => !document.querySelector<HTMLTextAreaElement>("textarea")?.disabled,
     );
   }
+  // Corrupt only client-bound text deltas. The rendered answer must still come
+  // from the unchanged Convex records written by the real Node generation.
+  await sender.route("**/api/ai/chat", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.text())
+      .split("\n")
+      .map((line) => {
+        if (!line.startsWith("data: ")) return line;
+        try {
+          const chunk = JSON.parse(line.slice(6));
+          if (chunk.type === "TEXT_MESSAGE_CONTENT") chunk.delta = "SSE_SHOULD_NOT_RENDER";
+          return "data: " + JSON.stringify(chunk);
+        } catch {
+          return line;
+        }
+      })
+      .join("\n");
+    await route.fulfill({ response, body });
+  });
   let refreshes = 0;
   for (const page of [sender, observer]) {
     // After bootstrap, the app must update from WebSocket subscriptions.
@@ -116,6 +137,8 @@ try {
     .join("");
   assert(reply);
   await observer.getByText(reply, { exact: true }).waitFor({ timeout: 20000 });
+  await sender.getByText(reply, { exact: true }).waitFor({ timeout: 20000 });
+  assert.equal(await sender.getByText(/SSE_SHOULD_NOT_RENDER/).count(), 0);
   assert.equal(refreshes, 0);
   assert.equal(await sender.getByText("Could not finish this turn", { exact: true }).count(), 0);
   assert.equal(await observer.getByText("Could not finish this turn", { exact: true }).count(), 0);
@@ -132,7 +155,7 @@ try {
     completed.conversation,
   );
   results.push("Reload restores ordered full message parts from the messages table");
-  // A rejected request must not leave an optimistic local message blocking subscriptions.
+  // Transport failures keep the saved prompt and release its queued turn.
   await sender.route("**/api/ai/chat", (route) =>
     route.fulfill({
       status: 400,
@@ -140,18 +163,105 @@ try {
       body: JSON.stringify({ error: "Temporary chat failure test" }),
     }),
   );
-  const rejected = "This rejected prompt must not be saved";
+  const rejected = `Saved prompt survives transport failure ${Date.now()}`;
   await sender.getByRole("textbox").fill(rejected);
   await sender.getByRole("textbox").press("Enter");
-  await sender.getByText("Temporary chat failure test", { exact: true }).waitFor();
-  await sender.getByText(rejected, { exact: true }).waitFor({ state: "hidden" });
+  await sender.getByText(/Temporary chat failure test/).waitFor();
+  await sender
+    .getByRole("button", { name: "Stop generation", exact: true })
+    .waitFor({ state: "hidden" });
+  await sender.getByText(rejected, { exact: true }).waitFor();
   await sender.getByText(reply, { exact: true }).waitFor();
-  assert.deepEqual(
-    await client.query(api.platform.studioMessages, { appId: app.id }),
-    completed.conversation,
+  const failed = await client.action(api.platform.getDemo, { appId: app.id, serverKey });
+  assert.equal(failed?.agentTurn?.status, "stopped");
+  assert.equal(failed?.conversation?.at(-1)?.parts[0]?.type, "text");
+  results.push("Transport errors preserve the saved prompt and release the queued turn");
+  await sender.getByRole("button", { name: "New chat", exact: true }).click();
+  const fixturePrompt = `Disposable thread ${Date.now()}`;
+  await sender.getByRole("textbox").fill(fixturePrompt);
+  await sender.getByRole("textbox").press("Enter");
+  await sender.getByText(/Temporary chat failure test/).waitFor();
+  await sender
+    .getByRole("button", { name: "Stop generation", exact: true })
+    .waitFor({ state: "hidden" });
+  await sender.getByText(fixturePrompt, { exact: true }).waitFor();
+  fixtureId = new URL(sender.url()).hash.slice(1).split("=")[1]!;
+  assert(fixtureId && fixtureId !== app.id);
+  const title = `Delete fixture ${Date.now()}`;
+  await client.mutation(api.platform.renameThread, { appId: fixtureId, title });
+  await sender.getByRole("heading", { name: title, exact: true }).waitFor();
+  await observer.getByRole("button", { name: title, exact: true }).click();
+  await observer.getByText(fixturePrompt, { exact: true }).waitFor();
+  results.push("New chat and title changes use direct Convex mutations and react in both tabs");
+  await sender.unroute("**/api/ai/chat");
+  const held = new Promise<void>((done) => {
+    releaseHeldRequest = done;
+  });
+  await sender.route("**/api/ai/chat", async (route) => {
+    await held;
+    await route
+      .fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Stopped held request" }),
+      })
+      .catch(() => {});
+  });
+  const remoteStop = `Remote stop ${Date.now()}`;
+  await sender.getByRole("textbox").fill(remoteStop);
+  await sender.getByRole("textbox").press("Enter");
+  await observer.getByText(remoteStop, { exact: true }).waitFor();
+  await observer.getByRole("button", { name: "Stop generation", exact: true }).click();
+  await sender
+    .getByRole("button", { name: "Stop generation", exact: true })
+    .waitFor({ state: "hidden", timeout: 5000 });
+  releaseHeldRequest!();
+  results.push("Stopping from another tab immediately cancels the sender's pending transport");
+  const queuedId = crypto.randomUUID();
+  await client.mutation(api.platform.sendMessage, {
+    appId: fixtureId,
+    messageId: queuedId,
+    content: "Queued delete race",
+  });
+  await assert.rejects(
+    client.mutation(api.platform.sendMessage, {
+      appId: fixtureId,
+      messageId: crypto.randomUUID(),
+      content: "Duplicate active turn",
+    }),
+    /already in progress/,
   );
+  await sender.getByRole("button", { name: `Delete ${title}`, exact: true }).click();
+  await sender.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert(await client.query(api.platform.studioApp, { appId: fixtureId }));
+  await sender.getByRole("button", { name: `Delete ${title}`, exact: true }).click();
+  await sender.getByRole("button", { name: "Delete conversation", exact: true }).click();
+  await sender.getByRole("heading", { name: "New chat", exact: true }).waitFor();
+  await observer.getByRole("heading", { name: "New chat", exact: true }).waitFor();
+  assert.equal(await client.query(api.platform.studioApp, { appId: fixtureId }), null);
+  assert.deepEqual(await client.query(api.platform.studioMessages, { appId: fixtureId }), []);
+  assert.equal(
+    (await rows("threads")).some((row) => row.threadId === fixtureId),
+    false,
+  );
+  assert.equal(
+    (await rows("messages")).some((row) => row.threadId === fixtureId),
+    false,
+  );
+  const late = await fetch(base + "/api/ai/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      appId: fixtureId,
+      messages: [
+        { id: queuedId, role: "user", parts: [{ type: "text", content: "Queued delete race" }] },
+      ],
+    }),
+  });
+  assert.equal(late.status, 400);
+  assert.equal(await client.query(api.platform.studioApp, { appId: fixtureId }), null);
   results.push(
-    "A rejected send rolls back to the subscribed history without persisting a phantom message",
+    "Confirmed deletion removes the active thread, app and messages in both tabs; late execution cannot resurrect it",
   );
   assert.deepEqual(errors, []);
   await writeFile(
@@ -160,5 +270,8 @@ try {
   );
   for (const result of results) console.log("PASS " + result);
 } finally {
+  releaseHeldRequest?.();
+  if (fixtureId)
+    await client.mutation(api.platform.deleteThread, { appId: fixtureId }).catch(() => {});
   await browser.close();
 }

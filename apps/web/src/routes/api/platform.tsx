@@ -14,6 +14,7 @@ export const Route = createFileRoute("/api/platform")({
             await snapshot(
               await accessFor(request),
               new URL(request.url).searchParams.get("summary") !== "1",
+              new URL(request.url).searchParams.get("status") === "1",
             ),
           );
         } catch {

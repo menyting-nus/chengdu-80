@@ -15,7 +15,9 @@ Open http://127.0.0.1:3001. This starts the real local Convex backend and the Vi
 
 To import an existing file-backed workspace once, use `bun run dev:convex --import-files .local/review-instance`. Existing IDs are skipped and source files are retained. `CD80_PORT=3002` selects a different frontend port.
 
-Existing embedded chat histories can be migrated through the trusted `platform.migrateChatStorage` action. It is idempotent and preserves source files and message IDs. Generation runs through TanStack AI on the Node server; streaming messages are checkpointed to Convex once per second and flushed when the turn ends. Model context is compacted separately from stored conversation history.
+Existing embedded chat histories can be migrated through the trusted `platform.migrateChatStorage` action. It is idempotent and preserves source files and message IDs. Creating threads, saving prompts, renaming, stopping and deleting use controlled Convex mutations. Every tab, including the sender, renders the same subscribed message records. The sidebar delete action confirms removal of a thread, its messages and its associated app.
+
+Generation runs through TanStack AI on the Node server after it claims a saved queued turn. SSE is consumed only for execution status and errors; streaming message text is checkpointed to Convex once per second and flushed when the turn ends. Model context is compacted separately from stored conversation history. Verification, shell tools, external plugin calls and permission-checked app runtime operations continue on Node.
 
 `bun run dev:local` remains an explicit file-backed prototype launcher for isolated fixture tests. It does not use Convex.
 
@@ -53,7 +55,7 @@ Nine capabilities cover normalized market data, reusable financial functions, cu
 
 ## Verification
 
-With the local Convex-backed dev server running and an existing generated conversation, `bun run test:convex` checks normalized storage, migration, access checks, and reactive message updates across two Chrome tabs. It makes one live model call and writes screenshots/results to `.local/convex-tests/`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when using an existing Chrome installation.
+With the local Convex-backed dev server running and an existing generated conversation, `bun run test:convex` checks normalized storage, migration, access checks, direct mutations, reactive messages across two Chrome tabs, transport failure recovery and thread deletion. It also verifies that client-bound SSE text cannot override the Convex transcript. It makes one live model call and writes screenshots/results to `.local/convex-tests/`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when using an existing Chrome installation.
 
 ```bash
 bun run test:prototype       # 12 financial, sandbox, hash and persistence checks

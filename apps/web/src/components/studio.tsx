@@ -4,6 +4,7 @@ import { PluginSettings } from "./plugin-settings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import type { UIMessage } from "@tanstack/ai-react";
+import { api as convexApi } from "@web-starter/backend/convex/_generated/api";
 import { StudioSubscriptions } from "../lib/use-studio-data";
 import {
   ArrowUpRight,
@@ -85,7 +86,8 @@ const workspaceTabs = [
   { value: "data", label: "Database (read-only)", Icon: Database },
 ] as const;
 export function Studio() {
-  const convexConfigured = !!useRouter().options.context.convexClient;
+  const convexClient = useRouter().options.context.convexClient;
+  const convexConfigured = !!convexClient;
   const [subscribedThreads, setSubscribedThreads] =
     useState<Pick<Application, "id" | "name" | "chatTitle">[]>();
   const [subscribedApp, setSubscribedApp] = useState<{ appId: string; app: Application | null }>();
@@ -132,9 +134,7 @@ export function Studio() {
   const apps = subscribedThreads ?? snapshot?.apps ?? [];
   const fallbackApp = snapshot?.apps.find((a) => a.id === selected) ?? null;
   const selectedApp =
-    reactive && subscribedApp?.appId === selected
-      ? (subscribedApp.app ?? fallbackApp)
-      : fallbackApp;
+    reactive && subscribedApp?.appId === selected ? subscribedApp.app : fallbackApp;
   const messagesReady =
     !reactive || !selected || (!!selectedApp && subscribedMessages?.appId === selected);
   const app =
@@ -157,12 +157,12 @@ export function Studio() {
   }
   useEffect(() => {
     let mounted = true;
-    api<Snapshot>(undefined, { summary: reactive })
+    api<Snapshot>(undefined, { statusOnly: reactive })
       .then((data) => {
         if (!mounted) return;
         setSnapshot(data);
         const id = new URLSearchParams(window.location.hash.slice(1)).get("app");
-        if (id && data.apps.some((a) => a.id === id)) {
+        if (id && (reactive || data.apps.some((a) => a.id === id))) {
           setSelected(id);
           setChatKey(id);
         }
@@ -190,7 +190,7 @@ export function Studio() {
       clearInterval(timer);
     };
   }, [reactive, app?.id, app?.chatTitle]);
-  function select(id: string | null) {
+  const select = useCallback((id: string | null) => {
     setSelected(id);
     setImported(null);
     setError("");
@@ -199,7 +199,13 @@ export function Studio() {
     setReview(null);
     setActiveSourceFile("app.js");
     window.history.replaceState(null, "", id ? `/#app=${id}` : "/");
-  }
+  }, []);
+  useEffect(() => {
+    // Another tab can delete the selected thread while this tab is open.
+    if (reactive && selected && subscribedApp?.appId === selected && subscribedApp.app === null) {
+      select(null);
+    }
+  }, [reactive, selected, subscribedApp, select]);
   async function run<T>(label: string, task: () => Promise<T>) {
     if (busy || agentBusy) return;
     setBusy(label);
@@ -278,6 +284,14 @@ export function Studio() {
         select={select}
         busy={!!busy || agentBusy}
         openSettings={() => setSettingsOpen(true)}
+        deleteThread={
+          reactive
+            ? async (appId) => {
+                await convexClient!.mutation(convexApi.platform.deleteThread, { appId });
+                if (selected === appId) select(null);
+              }
+            : undefined
+        }
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
@@ -356,7 +370,9 @@ export function Studio() {
               disabled={
                 !!busy ||
                 !messagesReady ||
-                (reactive && app?.agentTurn?.status === "running" && !agentBusy)
+                (reactive &&
+                  ["queued", "running"].includes(app?.agentTurn?.status ?? "") &&
+                  !agentBusy)
               }
               modelName={snapshot?.status.model ?? "AI"}
               onBusyChange={setAgentBusy}

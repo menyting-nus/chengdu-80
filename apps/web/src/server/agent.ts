@@ -9,14 +9,28 @@ import {
 } from "@tanstack/ai";
 import { Bash } from "just-bash";
 import { z } from "zod";
-import { bundleSchema, specSchema, capabilityContracts, type AppBundle } from "../lib/contracts";
+import {
+  bundleSchema,
+  specSchema,
+  capabilityContracts,
+  type AppBundle,
+  type Application,
+} from "../lib/contracts";
 import { protocolInstructions } from "../lib/samples";
-import { findApp, saveApp, mutateApp, type Access } from "./repository";
+import {
+  findApp,
+  saveApp,
+  mutateApp,
+  setChatTitle,
+  checkpointMessages,
+  type Access,
+} from "./repository";
+import { generateChatTitle } from "./chat-title";
 import { applyRelease, makeRelease } from "./platform";
 import { modelAdapter, modelOptions } from "./models";
 import { callPlugin, listPlugins } from "./plugins";
 import { defaultData } from "../lib/finance";
-import { settings } from "./settings";
+import { settings, localMode } from "./settings";
 
 const filePath = z.enum(["cd80.json", "index.html", "app.js", "style.css", "calculations.js"]);
 const activeTurns = new Set<string>();
@@ -132,20 +146,47 @@ export async function startAgentTurn(
   let persisted = false;
   try {
     const app = await findApp(access, appId);
+    const queued = app.agentTurn?.status === "queued" && app.agentTurn.id === user.id;
     if (
       app.agentTurn?.status === "running" &&
       Date.now() - Date.parse(app.agentTurn.startedAt) < 300000
     )
       throw new Error("This conversation is already replying.");
-    if (app.conversation?.some((message) => message.id === user.id))
-      throw new Error("This message has already been submitted.");
+    if (!queued && !(await localMode()))
+      throw new Error("Save the message through Convex before starting generation.");
+    const submitted = app.conversation?.find((message) => message.id === user.id);
+    if (submitted && !queued) throw new Error("This message has already been submitted.");
+    if (
+      queued &&
+      (!submitted ||
+        submitted.role !== "user" ||
+        submitted.parts
+          .filter((part) => part.type === "text")
+          .map((part) => part.content)
+          .join("\n") !== user.content)
+    )
+      throw new Error("Generation must match the saved user message.");
     processor = new StreamProcessor({ initialMessages: app.conversation ?? [] });
-    processor.addUserMessage(user.content, user.id);
+    if (!queued) processor.addUserMessage(user.content, user.id);
     app.conversation = processor.getMessages();
-    app.agentTurn = { id: user.id, startedAt: new Date().toISOString(), status: "running" };
-    app.turns = [...(app.turns ?? []), app.agentTurn].slice(-40);
+    app.agentTurn = {
+      id: user.id,
+      startedAt: queued ? app.agentTurn!.startedAt : new Date().toISOString(),
+      status: "running",
+    };
+    app.turns = queued
+      ? (app.turns ?? []).map((turn) => (turn.id === user.id ? app.agentTurn! : turn))
+      : [...(app.turns ?? []), app.agentTurn].slice(-40);
     await saveApp(access, app, app.revision);
     persisted = true;
+    if (
+      queued &&
+      app.chatTitle === "New chat" &&
+      app.conversation.filter((message) => message.role === "user").length === 1
+    )
+      void generateChatTitle(user.content)
+        .then((title) => setChatTitle(access, appId, title))
+        .catch(() => {});
     const workspace = app.workspace ?? app.current?.bundle ?? app.preview?.bundle;
     if (!workspace) throw new Error("Workspace is missing.");
     const files = fileContents(workspace);
@@ -157,10 +198,15 @@ export async function startAgentTurn(
       executionLimits: { maxCommandCount: 200, maxLoopIterations: 1000, maxCallDepth: 20 },
     });
     let spec = app.workspaceSpec ?? app.spec;
+    function requireActive(latest: Application) {
+      if (latest.agentTurn?.id !== user.id || latest.agentTurn.status !== "running")
+        controller.abort();
+      controller.signal.throwIfAborted();
+    }
     async function checkpoint() {
       controller.signal.throwIfAborted();
       await mutateApp(access, appId, (latest) => {
-        controller.signal.throwIfAborted();
+        requireActive(latest);
         latest.workspace = fileBundle(files);
         latest.conversation = compactTranscript(processor.getMessages(), false, false);
       });
@@ -272,7 +318,7 @@ export async function startAgentTurn(
         inputSchema: specSchema,
       }).server(async (next) => {
         await mutateApp(access, appId, (latest) => {
-          controller.signal.throwIfAborted();
+          requireActive(latest);
           if (latest.current && latest.spec.protocol !== next.protocol)
             throw new Error("An active app's calculation protocol cannot change.");
           if (!latest.current && latest.spec.protocol !== next.protocol)
@@ -302,7 +348,7 @@ export async function startAgentTurn(
         controller.signal.throwIfAborted();
         let activated = false;
         await mutateApp(access, appId, async (latest) => {
-          controller.signal.throwIfAborted();
+          requireActive(latest);
           activated = await applyRelease(latest, release);
           controller.signal.throwIfAborted();
           latest.workspace = bundle;
@@ -325,7 +371,7 @@ export async function startAgentTurn(
         if (!registered.some((plugin) => plugin.id === pluginId))
           throw new Error("Registered plugin not found.");
         await mutateApp(access, appId, (latest) => {
-          controller.signal.throwIfAborted();
+          requireActive(latest);
           latest.enabledPlugins = [...new Set([...(latest.enabledPlugins ?? []), pluginId])];
         });
         return { enabled: true, pluginId };
@@ -381,9 +427,12 @@ export async function startAgentTurn(
           else yield chunk;
           // Checkpoint streamed text for other subscribers without a write per token.
           if (!controller.signal.aborted && Date.now() - lastMessageSave >= 1000) {
-            await mutateApp(access, appId, (latest) => {
-              latest.conversation = compactTranscript(processor.getMessages(), false, false);
-            });
+            await checkpointMessages(
+              access,
+              appId,
+              user.id,
+              compactTranscript(processor.getMessages(), false, false),
+            );
             lastMessageSave = Date.now();
           }
         }
@@ -399,6 +448,8 @@ export async function startAgentTurn(
         if (controller.signal.aborted) status = "stopped";
         try {
           await mutateApp(access, appId, (latest) => {
+            if (latest.agentTurn?.id !== user.id) return;
+            if (latest.agentTurn.status === "stopped") status = "stopped";
             latest.conversation = compactTranscript(processor.getMessages(), true, false);
             const settledTurn = {
               id: user.id,
@@ -410,6 +461,10 @@ export async function startAgentTurn(
             latest.turns = (latest.turns ?? []).map((turn) =>
               turn.id === user.id ? settledTurn : turn,
             );
+          }).catch((error: unknown) => {
+            // Deleting a thread is final. A late stream flush cannot recreate it.
+            if (!(error instanceof Error && error.message.includes("Application not found")))
+              throw error;
           });
         } finally {
           cleanup();
@@ -428,9 +483,14 @@ export async function startAgentTurn(
     requestSignal.removeEventListener("abort", abort);
     activeTurns.delete(turnKey);
     if (persisted) {
-      const latest = await findApp(access, appId);
-      if (latest.agentTurn) latest.agentTurn.status = "error";
-      await saveApp(access, latest, latest.revision);
+      await mutateApp(access, appId, (latest) => {
+        if (latest.agentTurn?.id !== user.id || latest.agentTurn.status === "stopped") return;
+        latest.agentTurn.status = "error";
+        latest.agentTurn.completedAt = new Date().toISOString();
+        latest.turns = (latest.turns ?? []).map((turn) =>
+          turn.id === user.id ? latest.agentTurn! : turn,
+        );
+      }).catch(() => {});
     }
     throw error;
   }

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import {
   action,
+  mutation,
   internalMutation,
   internalQuery,
   query,
@@ -9,7 +10,9 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Application } from "../../../apps/web/src/lib/contracts";
+import { protocols, type Application } from "../../../apps/web/src/lib/contracts";
+import { sampleBundle } from "../../../apps/web/src/lib/samples";
+import { defaultData, fixtureMeta } from "../../../apps/web/src/lib/finance";
 
 type Messages = NonNullable<Application["conversation"]>;
 type ThreadMetadata = Pick<Application, "turns" | "agentTurn">;
@@ -99,6 +102,164 @@ async function studioOwner(ctx: QueryCtx) {
   throw new Error("Authentication required");
 }
 
+function boundedText(value: string, maximum: number, label: string) {
+  const text = value.trim();
+  if (!text || text.length > maximum) throw new Error(`Invalid ${label}`);
+  return text;
+}
+
+function queueMessage(app: Application, messageId: string, content: string) {
+  const id = boundedText(messageId, 200, "message ID");
+  const text = boundedText(content, 12000, "message");
+  const active = app.agentTurn;
+  if (
+    active &&
+    (active.status === "queued" || active.status === "running") &&
+    Date.now() - Date.parse(active.startedAt) < 5 * 60 * 1000
+  )
+    throw new Error("A conversation turn is already in progress");
+  const messages = app.conversation ?? [];
+  if (messages.some((message) => message.id === id)) throw new Error("Message already exists");
+  const startedAt = new Date(Date.now()).toISOString();
+  app.conversation = [
+    ...messages,
+    { id, role: "user", createdAt: new Date(startedAt), parts: [{ type: "text", content: text }] },
+  ];
+  app.agentTurn = { id, startedAt, status: "queued" };
+  app.turns = [...(app.turns ?? []), app.agentTurn].slice(-40);
+}
+
+async function ownedApp(ctx: MutationCtx, appId: string) {
+  const ownerId = await studioOwner(ctx);
+  const row = await ctx.db
+    .query("apps")
+    .withIndex("by_app", (q) => q.eq("appId", appId))
+    .unique();
+  if (!row || row.ownerId !== ownerId) throw new Error("Application not found");
+  return { row, ownerId, app: await hydrateApp(ctx, row.payload as Application) };
+}
+
+// The client supplies its UUID so the mutation never needs a non-deterministic crypto API.
+export const createWorkspace = mutation({
+  args: { appId: v.string(), prompt: v.string(), messageId: v.string() },
+  handler: async (ctx, { appId, prompt, messageId }): Promise<Application> => {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appId))
+      throw new Error("Invalid application ID");
+    const text = boundedText(prompt, 12000, "prompt");
+    const ownerId = await studioOwner(ctx);
+    const spec = {
+      ...protocols[0]!.defaultSpec,
+      name: "New chat",
+      purpose: text.length >= 10 ? text.slice(0, 4000) : `Conversation: ${text}`,
+    };
+    const workspace = sampleBundle(spec);
+    workspace.files["index.html"] = '<main id="app"></main>';
+    workspace.files["app.js"] = "cd80.ready();";
+    workspace.files["style.css"] = "";
+    const app: Application = {
+      id: appId,
+      ownerId,
+      name: "New chat",
+      chatTitle: "New chat",
+      spec,
+      revision: 0,
+      current: null,
+      preview: null,
+      workspace,
+      data: { inputs: defaultData(spec.protocol), _provenance: fixtureMeta },
+      history: [],
+      events: [],
+      createdAt: new Date(Date.now()).toISOString(),
+      conversation: [],
+    };
+    queueMessage(app, messageId, text);
+    return commitApp(ctx, { app, ownerId, expectedRevision: null });
+  },
+});
+
+export const sendMessage = mutation({
+  args: { appId: v.string(), messageId: v.string(), content: v.string() },
+  handler: async (ctx, { appId, messageId, content }): Promise<Application> => {
+    const { app, row, ownerId } = await ownedApp(ctx, appId);
+    queueMessage(app, messageId, content);
+    return commitApp(ctx, { app, ownerId, expectedRevision: row.revision });
+  },
+});
+
+// Text streaming updates only normalized message rows, leaving large source payload subscriptions quiet.
+export const checkpointMessages = mutation({
+  args: { appId: v.string(), turnId: v.string(), messagesJson: v.string(), serverKey: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { appId, turnId, messagesJson, serverKey }) => {
+    const expected = process.env.PLATFORM_INTERNAL_KEY;
+    if (!expected || expected.length < 32 || serverKey !== expected)
+      throw new Error("Trusted platform server required");
+    const ownerId = await studioOwner(ctx);
+    const row = await ctx.db
+      .query("apps")
+      .withIndex("by_app", (q) => q.eq("appId", appId))
+      .unique();
+    if (!row || row.ownerId !== ownerId) throw new Error("Application not found");
+    const thread = await threadFor(ctx, appId);
+    if (!thread || thread.ownerId !== ownerId) throw new Error("Application not found");
+    const { agentTurn } = JSON.parse(thread.metadata) as ThreadMetadata;
+    if (!agentTurn || agentTurn.id !== turnId || agentTurn.status !== "running")
+      throw new Error("Conversation turn is no longer active");
+    if (messagesJson.length > 8000000) throw new Error("Conversation is too large");
+    const messages: unknown = JSON.parse(messagesJson);
+    if (!Array.isArray(messages)) throw new Error("Invalid conversation");
+    await storeMessages(ctx, appId, messages as Messages);
+    return null;
+  },
+});
+
+export const renameThread = mutation({
+  args: { appId: v.string(), title: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { appId, title }) => {
+    const { app, row, ownerId } = await ownedApp(ctx, appId);
+    app.chatTitle = boundedText(title, 60, "title");
+    // Advance the revision so an in-flight server save cannot overwrite the rename.
+    const { conversation: _conversation, ...metadataOnly } = app;
+    await commitApp(ctx, { app: metadataOnly, ownerId, expectedRevision: row.revision });
+    return null;
+  },
+});
+
+export const stopTurn = mutation({
+  args: { appId: v.string(), turnId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { appId, turnId }) => {
+    const { app, row, ownerId } = await ownedApp(ctx, appId);
+    const turn = app.agentTurn;
+    if (!turn || turn.id !== turnId || (turn.status !== "queued" && turn.status !== "running"))
+      return null;
+    app.agentTurn = { ...turn, status: "stopped", completedAt: new Date(Date.now()).toISOString() };
+    app.turns = (app.turns ?? []).map((entry) => (entry.id === turnId ? app.agentTurn! : entry));
+    const { conversation: _conversation, ...metadataOnly } = app;
+    await commitApp(ctx, { app: metadataOnly, ownerId, expectedRevision: row.revision });
+    return null;
+  },
+});
+
+export const deleteThread = mutation({
+  args: { appId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { appId }) => {
+    const { row, ownerId } = await ownedApp(ctx, appId);
+    const thread = await threadFor(ctx, appId);
+    if (thread && thread.ownerId !== ownerId) throw new Error("Access denied");
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_thread_order", (q) => q.eq("threadId", appId))
+      .collect();
+    for (const message of messages) await ctx.db.delete(message._id);
+    if (thread) await ctx.db.delete(thread._id);
+    await ctx.db.delete(row._id);
+    return null;
+  },
+});
+
 // Public subscriptions only expose the current account or the explicitly shared demo workspace.
 export const studioThreads = query({
   args: {},
@@ -151,7 +312,7 @@ export const studioMessages = query({
       .query("apps")
       .withIndex("by_app", (q) => q.eq("appId", appId))
       .unique();
-    if (!row || row.ownerId !== ownerId) throw new Error("Application not found");
+    if (!row || row.ownerId !== ownerId) return [];
     return (row.payload as Application).conversation ?? readMessages(ctx, appId);
   },
 });
@@ -198,34 +359,41 @@ export const save = action({
     });
   },
 });
+// Trusted execution and controlled public mutations share one atomic persistence path.
+async function commitApp(
+  ctx: MutationCtx,
+  args: { app: Application; expectedRevision: number | null; ownerId: string },
+): Promise<Application> {
+  if (args.app.ownerId !== args.ownerId || appSize(args.app) > 700000)
+    throw new Error("Invalid app ownership or size");
+  const row = await ctx.db
+    .query("apps")
+    .withIndex("by_app", (q) => q.eq("appId", args.app.id))
+    .unique();
+  if (row && row.ownerId !== args.ownerId) throw new Error("Access denied");
+  if (args.expectedRevision === null ? row : !row || row.revision !== args.expectedRevision)
+    throw new Error("Application changed. Refresh and try again.");
+  const revision = (args.expectedRevision ?? 0) + 1;
+  const {
+    conversation,
+    chatTitle: _chatTitle,
+    turns: _turns,
+    agentTurn: _agentTurn,
+    ...app
+  } = args.app;
+  const payload = { ...app, revision };
+  // Metadata-only saves preserve history; supplied history is the authoritative transcript.
+  const messages = conversation ?? (row?.payload as Application | undefined)?.conversation;
+  if (messages) await storeMessages(ctx, payload.id, messages);
+  await storeThread(ctx, args.app, args.ownerId);
+  if (row) await ctx.db.patch(row._id, { payload, revision });
+  else await ctx.db.insert("apps", { appId: payload.id, ownerId: args.ownerId, revision, payload });
+  return hydrateApp(ctx, payload);
+}
+
 export const commit = internalMutation({
   args: { app: v.any(), expectedRevision: v.union(v.number(), v.null()), ownerId: v.string() },
-  handler: async (ctx, args) => {
-    const row = await ctx.db
-      .query("apps")
-      .withIndex("by_app", (q) => q.eq("appId", args.app.id))
-      .unique();
-    if (row && row.ownerId !== args.ownerId) throw new Error("Access denied");
-    if (args.expectedRevision === null ? row : !row || row.revision !== args.expectedRevision)
-      throw new Error("Application changed. Refresh and try again.");
-    const revision = (args.expectedRevision ?? 0) + 1;
-    const {
-      conversation,
-      chatTitle: _chatTitle,
-      turns: _turns,
-      agentTurn: _agentTurn,
-      ...app
-    } = args.app as Application;
-    const payload = { ...app, revision };
-    // Metadata-only saves preserve history; supplied history is the authoritative transcript.
-    const messages = conversation ?? (row?.payload as Application | undefined)?.conversation;
-    if (messages) await storeMessages(ctx, payload.id, messages);
-    await storeThread(ctx, args.app as Application, args.ownerId);
-    if (row) await ctx.db.patch(row._id, { payload, revision });
-    else
-      await ctx.db.insert("apps", { appId: payload.id, ownerId: args.ownerId, revision, payload });
-    return hydrateApp(ctx, payload);
-  },
+  handler: (ctx, args) => commitApp(ctx, { ...args, app: args.app as Application }),
 });
 
 // Only the platform server can access the explicitly enabled shared demo workspace.

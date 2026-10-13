@@ -133,13 +133,13 @@ export type Application = {
     id: string;
     startedAt: string;
     completedAt?: string;
-    status: "running" | "complete" | "stopped" | "error";
+    status: "queued" | "running" | "complete" | "stopped" | "error";
   }[];
   agentTurn?: {
     id: string;
     startedAt: string;
     completedAt?: string;
-    status: "running" | "complete" | "stopped" | "error";
+    status: "queued" | "running" | "complete" | "stopped" | "error";
   };
 };
 export type Protocol = {

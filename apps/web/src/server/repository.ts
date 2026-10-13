@@ -106,6 +106,34 @@ export function event(app: Application, message: string) {
   app.events = [{ at: new Date().toISOString(), message }, ...app.events].slice(0, 50);
 }
 
+export async function setChatTitle(access: Access, appId: string, title: string) {
+  if (await localMode())
+    return mutateApp(access, appId, (app) => {
+      app.chatTitle = title;
+    });
+  return (await client(access)).mutation(api.platform.renameThread, { appId, title });
+}
+
+export async function checkpointMessages(
+  access: Access,
+  appId: string,
+  turnId: string,
+  messages: NonNullable<Application["conversation"]>,
+) {
+  if (await localMode())
+    return mutateApp(access, appId, (app) => {
+      app.conversation = messages;
+    });
+  const config = await settings();
+  if (!config.PLATFORM_INTERNAL_KEY) throw new Error("PLATFORM_INTERNAL_KEY is missing");
+  return (await client(access)).mutation(api.platform.checkpointMessages, {
+    appId,
+    turnId,
+    messagesJson: JSON.stringify(messages),
+    serverKey: config.PLATFORM_INTERNAL_KEY,
+  });
+}
+
 // Retry field merges after another writer (title, tools, or app data) advances the revision.
 export async function mutateApp(
   access: Access,

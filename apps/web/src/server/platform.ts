@@ -74,10 +74,10 @@ export async function accessFor(request: Request): Promise<Access> {
   if (!session.viewer || !session.accessToken) throw new Error("Authentication required");
   return { ownerId: session.viewer.id, accessToken: session.accessToken };
 }
-export async function snapshot(access: Access, includeMessages = true) {
+export async function snapshot(access: Access, includeMessages = true, statusOnly = false) {
   const config = await settings();
   return {
-    apps: await listApps(access, includeMessages),
+    apps: statusOnly ? [] : await listApps(access, includeMessages),
     protocols,
     status: {
       local: await localMode(),
@@ -168,6 +168,7 @@ async function build(
 export async function dispatch(access: Access, raw: unknown) {
   const req = requestSchema.parse(raw);
   if (req.action === "create-workspace") {
+    if (!(await localMode())) throw new Error("Create conversations through the Convex mutation.");
     const app = newApp(access, {
       ...protocols[0]!.defaultSpec,
       name: "New chat",
