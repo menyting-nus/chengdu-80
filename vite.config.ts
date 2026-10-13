@@ -5,6 +5,8 @@ export default defineConfig({
     ignorePatterns: ["packages/backend/convex/_generated/**"],
   },
   lint: {
+    // Exported app source is checked by the isolated starter compiler with its own aliases.
+    ignorePatterns: ["examples/**"],
     plugins: ["typescript", "unicorn", "oxc"],
     categories: {
       correctness: "error",

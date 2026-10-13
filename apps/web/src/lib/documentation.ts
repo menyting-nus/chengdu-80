@@ -15,7 +15,7 @@ export const documentation = [
     slug: "source",
     title: "Source format",
     navigation: "Source format",
-    description: "React/TSX starter, legacy browser bundles, permissions and import limits.",
+    description: "React/TSX starter, permissions and import limits.",
     toc: [],
   },
   {

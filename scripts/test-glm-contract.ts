@@ -6,6 +6,7 @@ import { sampleBundle } from "../apps/web/src/lib/samples";
 
 const spec = protocols[0]!.defaultSpec;
 const bundle = sampleBundle(spec);
+bundle.files["src/styles.css"] = "";
 const requests: any[] = [];
 let invalid = false;
 let fenced = false;

@@ -108,8 +108,8 @@ try {
   pass("Input edits reset provenance and app code cannot falsify platform metadata");
   const goodId = app.current.id;
   const broken = sampleBundle(spec);
-  broken.files["calculations.js"] =
-    "export function analyze(){return {totalValue:0,profit:0,returnPct:0,concentrationPct:0};}";
+  broken.files["src/App.tsx"] =
+    'export default function App(){const value:number="invalid";return <main>{value}</main>}';
   app = await request({ action: "import", appId: app.id, bundle: broken });
   assert.equal(app.preview.verification.passed, false);
   const failedPreviewId = app.preview.id;
@@ -135,15 +135,17 @@ try {
   );
   await request({ action: "accept", appId: app.id, releaseId: app.preview.id }, false);
   assert.equal(app.current.id, goodId);
-  pass("Incorrect imported calculations block acceptance and preserve working release");
+  pass("Invalid imported TSX blocks activation and preserves the working release");
   const custom = sampleBundle(spec);
-  custom.files["app.js"] +=
-    "\ndocument.getElementById('chart-title').textContent='Imported custom portfolio view';";
+  custom.files["src/App.tsx"] = custom.files["src/App.tsx"].replace(
+    "{spec.name}</h1>",
+    "Imported custom portfolio view</h1>",
+  );
   app = await request({ action: "import", appId: app.id, bundle: custom });
   assert.equal(app.current.origin, "import");
   assert.equal(app.current.verification.passed, true);
   assert.equal(app.preview, null);
-  assert.ok(app.current.bundle.files["app.js"].includes("Imported custom portfolio view"));
+  assert.ok(app.current.bundle.files["src/App.tsx"].includes("Imported custom portfolio view"));
   assert.deepEqual(app.data.inputs, inputs);
   pass("External source import verifies, releases, and retains app data");
   await request(

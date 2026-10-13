@@ -49,21 +49,13 @@ async function hashDirectory(
 
 export function inspectTsxSource(bundle: AppBundle): Check[] {
   const issues = inspectSources(bundle.files);
-  const css = bundle.files["style.css"]
+  const css = (bundle.files["src/styles.css"] ?? "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\\([0-9a-f]{1,6})\s?/gi, (_match, hex: string) =>
       String.fromCodePoint(Math.min(parseInt(hex, 16), 0x10ffff)),
     )
     .replace(/\\([^\r\n])/g, "$1");
   return [
-    {
-      name: "Trusted React entry",
-      passed:
-        /^\s*<div\s+id=["']root["']\s*>\s*<\/div>\s*$/.test(bundle.files["index.html"]) &&
-        bundle.files["app.js"].trim() === "// React entry is compiled by the platform.",
-      detail:
-        "The platform supplies the React entry; editable application code belongs in src/App.tsx and src/components.",
-    },
     {
       name: "Self-contained React styles",
       passed:

@@ -7,6 +7,7 @@ import { clarify, generate, explain } from "../apps/web/src/server/models";
 // A local transport fixture checks SDK wiring. It does not prove live model access.
 const spec = protocols[0]!.defaultSpec;
 const bundle = sampleBundle(spec);
+bundle.files["src/styles.css"] = "";
 const requests: any[] = [];
 const server = createServer(async (req, res) => {
   assert.equal(req.url, "/v1/responses");

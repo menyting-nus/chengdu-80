@@ -91,14 +91,8 @@ export default function App() { return <Card><CardHeader><CardTitle>Copper Finch
           },
         },
         {
-          name: "write_file",
-          arguments: {
-            path: "cd80.json",
-            content: JSON.stringify({
-              ...pluginManifest,
-              permissions: [...new Set([...pluginManifest.permissions, "plugin.call"])],
-            }),
-          },
+          name: "set_permissions",
+          arguments: { permissions: [...new Set([...pluginManifest.permissions, "plugin.call"])] },
         },
         {
           name: "write_file",

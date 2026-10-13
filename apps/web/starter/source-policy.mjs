@@ -50,8 +50,13 @@ export function resolveGeneratedImport(from, specifier, files) {
 // This is a build policy, not an OS sandbox or a browser security boundary.
 export function inspectSources(files) {
   const issues = [];
+  if (!Object.hasOwn(files, "src/App.tsx")) issues.push("The React workspace requires src/App.tsx");
   for (const [name, content] of Object.entries(files)) {
-    if (!isGeneratedSource(name)) continue;
+    if (name === "src/styles.css") continue;
+    if (!isGeneratedSource(name)) {
+      issues.push(`${name}: unsupported source file`);
+      continue;
+    }
     const source = ts.createSourceFile(
       name,
       content,

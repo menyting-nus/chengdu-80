@@ -44,15 +44,15 @@ Portfolio, screening and strategy protocols are provisional feasibility examples
 
 ## Source and runtime
 
-Public docs: `/docs` and `/api/docs`. New apps use source format 2: a manifest, the fixed React entry placeholders, `calculations.js`, `style.css`, `src/App.tsx` and optional nested `src/components/*.tsx` or `.ts` files. The AI writes real TypeScript/JSX rather than a composition-only configuration. The platform supplies React, Tailwind v4, shadcn Nova, TanStack Query, Zod, Lucide icons, the typed `@cd80/sdk` and reusable `@cd80/components`. It supplies the React root and QueryClientProvider too. Code shows the app source alongside a read-only `starter/` tree containing the exact shadcn TSX, Tailwind preset, SDK, entry template, compiler, dependency manifests and lockfile used by the installed starter. These are source files, not compiled JS/CSS; environment files and host paths are never exposed.
+Public docs: `/docs` and `/api/docs`. New apps use a React-only source format: `src/App.tsx`, optional `src/styles.css` and nested `src/components/*.tsx` or `.ts` files. Titles, protocols and capability permissions are system metadata in Convex, managed by agent tools rather than source files. The AI writes real TypeScript/JSX rather than a composition-only configuration. The platform supplies React, Tailwind v4, shadcn Nova, TanStack Query, Zod, Lucide icons, the typed `@cd80/sdk` and reusable `@cd80/components`. It supplies the React root and QueryClientProvider too. Code shows the app source alongside a read-only `starter/` tree containing the exact shadcn TSX, Tailwind preset, SDK, entry template, compiler, dependency manifests and lockfile used by the installed starter. These are source files, not compiled JS/CSS; environment files and host paths are never exposed.
 
 A fixed worker run by Bun typechecks and bundles these sources with the existing Vite toolchain before activation. It parses browser source without importing or running generated code on the server. The worker receives a scrubbed environment, approved imports and a fixed build configuration; arbitrary packages, macros, dynamic imports and compiler directives are rejected. Builds run serially with a 60-second deadline. This is a bounded compiler subprocess, not an OS sandbox or a separate container per app.
 
-Source and data stay in Convex. Compiled JS/CSS are cached on Node and served through an ownership-checked asset endpoint; they are rebuilt from verified source after restart. Existing format-1 apps retain their four plain JavaScript/HTML/CSS files and work unchanged. JSON bundle uploads support both formats, up to 250 KB; format 2 permits at most 44 source files and 200 KB of source.
+Source and data stay in Convex. Compiled JS/CSS are cached on Node and served through an ownership-checked asset endpoint; they are rebuilt from verified source after restart. Legacy bundle formats are unsupported. JSON bundle uploads contain React source and system metadata, up to 250 KB; format 2 permits at most 44 source files and 200 KB of source.
 
-Browser apps run in opaque-origin iframes with restrictive CSP and a permission-checked `cd80.call()` bridge. `calculations.js` exports `analyze(input)` and always runs in a separate Miniflare/workerd isolate (no Cloudflare account required), without secrets or network access. CPU is capped and a 3-second disposal timeout applies. App sources, releases and shared data are in Convex.
+Browser apps run in opaque-origin iframes with restrictive CSP and a permission-checked `cd80.call()` bridge. Financial capabilities use trusted platform functions; generated code executes only in the browser. App sources, releases and shared data are in Convex.
 
-Releases require syntax, contract, permission, credential-pattern, numerical fixture, boundary, and applicable invalid-input checks. React releases also require strict TypeScript checking and compilation. Browser smoke tests separately verify actual React rendering, SDK calls, shadcn styling and iframe networking restrictions; compilation alone does not certify rendered behavior. SHA-256 binds checks to exact source. Passing establishes the tested protocol contract, not certification of every additional calculation or the full specification. Review custom logic and rendered previews.
+Releases require source policy, metadata consistency, credential-pattern, TypeScript and compilation checks. Browser smoke tests separately verify actual React rendering, SDK calls, shadcn styling and iframe networking restrictions; compilation alone does not certify rendered behavior. SHA-256 binds checks to exact source. Passing establishes the tested protocol contract, not certification of every additional calculation or the full specification. Review custom logic and rendered previews.
 
 Nine capabilities cover normalized market data, reusable financial functions, custom calculations, shared storage and managed AI. New providers require adapters. `_provenance` is reserved; edited inputs are labelled user-entered. AI explanations use server-recomputed saved inputs.
 
@@ -62,7 +62,7 @@ With the local Convex-backed dev server running and an existing generated conver
 
 ```bash
 bun scripts/test-tsx.ts      # React/shadcn browser E2E; build first with VITE_LOCAL_MODE=1
-bun run test:prototype       # 12 financial, sandbox, hash and persistence checks
+bun run test:prototype       # Fixed financial functions, source hash/policy and persistence checks
 bun run test:flow            # 13 HTTP lifecycle checks on temporary data
 bun run test:model-contract  # 3 mock Responses transport checks, not live inference
 bun run test:glm-contract    # 10 mock GLM format/recovery/deadline checks
@@ -71,10 +71,9 @@ bun run check
 bun run build
 bun run codegen             # Requires configured Convex deployment
 bun run deploy:backend      # Loads workspace credentials; development deployments only
-bun scripts/test-hosted.ts https://your-worker.workers.dev # 15 live checks; creates/updates one test app
 ```
 
-Lifecycle tests do not modify workspace apps. `bun run examples` regenerates bundles, split source, schemas and protocol instructions. `examples/imported-risk-desk.cd80.json` demonstrates a fourth app with custom imported browser code.
+Lifecycle tests do not modify workspace apps. `bun run examples` regenerates bundles, split source, schemas and protocol instructions.
 
 ## Self-hosted deployment
 

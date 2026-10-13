@@ -43,7 +43,7 @@ async function build(files) {
   if (
     !Object.hasOwn(files, "src/App.tsx") ||
     generated.length > 40 ||
-    generated.reduce((total, [, content]) => total + content.length, 0) > 200_000
+    Object.values(files).reduce((total, content) => total + content.length, 0) > 200_000
   )
     throw new Error("React workspace exceeds the supported source bounds");
   const temporary = process.argv[2] ?? (await mkdtemp(path.join(os.tmpdir(), "cd80-tsx-")));
@@ -154,7 +154,7 @@ async function build(files) {
       ...(await sourcesIn(uiRoot)),
       ...(await sourcesIn(sdkRoot)),
     ]);
-    const css = `${tailwind.build(candidates)}\nhtml,body,#root{min-height:100%;margin:0}html{scrollbar-gutter:stable}\n${files["style.css"] ?? ""}`;
+    const css = `${tailwind.build(candidates)}\nhtml,body,#root{min-height:100%;margin:0}html{scrollbar-gutter:stable}\n${files["src/styles.css"] ?? ""}`;
     if (css.length > 2_000_000) throw new Error("Compiled styles exceed the supported asset size");
     return { javascript, css };
   } finally {

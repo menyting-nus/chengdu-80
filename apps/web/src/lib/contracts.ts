@@ -33,7 +33,7 @@ export const capabilityContracts = {
   },
   "finance.calculate": {
     input: "Selected protocol input object",
-    output: "Your calculations.js analyze(input) result",
+    output: "Verified built-in result for the selected financial protocol",
   },
   "finance.portfolio": {
     input:
@@ -74,52 +74,31 @@ export const specSchema = z
   })
   .strict();
 export type ProductSpec = z.infer<typeof specSchema>;
-export const legacyBundleSchema = z
+export const bundleSchema = z
   .object({
     manifest: z
       .object({
-        schemaVersion: z.literal(1),
+        schemaVersion: z.literal(2),
         name: z.string().min(3).max(80),
         protocol: z.enum(protocolIds),
         permissions: z.array(z.enum(capabilities)).max(10),
       })
       .strict(),
     files: z
-      .object({
-        "index.html": z.string().min(20).max(60000),
-        "app.js": z.string().min(10).max(60000),
-        "calculations.js": z.string().min(10).max(30000),
-        "style.css": z.string().max(30000),
-      })
-      .strict(),
-  })
-  .strict();
-const sourceFilesSchema = legacyBundleSchema.shape.files.catchall(z.string().max(60000));
-export const bundleSchema = z
-  .object({
-    manifest: legacyBundleSchema.shape.manifest.extend({
-      schemaVersion: z.union([z.literal(1), z.literal(2)]),
-    }),
-    files: sourceFilesSchema,
+      .object({ "src/App.tsx": z.string().min(1).max(60000) })
+      .catchall(z.string().max(60000)),
   })
   .strict()
   .superRefine((bundle, ctx) => {
-    const legacy = new Set(["index.html", "app.js", "calculations.js", "style.css"]);
     const paths = Object.keys(bundle.files);
     for (const path of paths) {
-      if (legacy.has(path)) continue;
       if (
-        bundle.manifest.schemaVersion === 1 ||
-        !/^src\/(?:App\.tsx|components\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.tsx?)$/.test(path)
+        !/^src\/(?:App\.tsx|styles\.css|components\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.tsx?)$/.test(
+          path,
+        )
       )
         ctx.addIssue({ code: "custom", path: ["files", path], message: "Unsupported source path" });
     }
-    if (bundle.manifest.schemaVersion === 2 && !bundle.files["src/App.tsx"]?.trim())
-      ctx.addIssue({
-        code: "custom",
-        path: ["files", "src/App.tsx"],
-        message: "React apps require src/App.tsx",
-      });
     if (
       paths.length > 44 ||
       Object.values(bundle.files).reduce((size, content) => size + content.length, 0) > 200000

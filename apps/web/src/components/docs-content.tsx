@@ -30,7 +30,7 @@ export function OverviewContent() {
           variant="outline"
           onClick={() =>
             download(
-              "portfolio-example.cd80.json",
+              "portfolio-example.bundle.json",
               JSON.stringify(sampleBundle(protocols[0].defaultSpec), null, 2),
             )
           }
@@ -79,10 +79,10 @@ export function SourceContent() {
   return (
     <>
       <p>
-        Upload a JSON bundle with <code>manifest</code> and <code>files</code>. Version 2 supports
-        React and TypeScript with the supplied shadcn Nova starter. Version 1 remains compatible
-        with existing plain JavaScript apps. The platform supplies pinned dependencies and build
-        configuration; apps cannot install packages or run arbitrary server frameworks.
+        Upload a JSON bundle with <code>manifest</code> and <code>files</code>. The application
+        format uses React and TypeScript with the supplied shadcn Nova starter. The platform
+        supplies pinned dependencies and build configuration; apps cannot install packages or run
+        arbitrary server frameworks.
       </p>
       <Table>
         <TableHeader>
@@ -95,8 +95,8 @@ export function SourceContent() {
           <TableRow>
             <TableCell className="whitespace-normal">src/App.tsx</TableCell>
             <TableCell className="whitespace-normal">
-              Version 2 React entry component, exported as default. Compose supplied shadcn
-              components and platform capabilities in ordinary TSX.
+              React entry component, exported as default. Compose supplied shadcn components and
+              platform capabilities in ordinary TSX.
             </TableCell>
           </TableRow>
           <TableRow>
@@ -106,40 +106,18 @@ export function SourceContent() {
             </TableCell>
           </TableRow>
           <TableRow>
-            <TableCell className="whitespace-normal">cd80.json</TableCell>
+            <TableCell className="whitespace-normal">src/styles.css</TableCell>
             <TableCell className="whitespace-normal">
-              Manifest with schemaVersion, name, protocol, permissions
-            </TableCell>
-          </TableRow>
-          <TableRow>
-            <TableCell className="whitespace-normal">index.html</TableCell>
-            <TableCell className="whitespace-normal">
-              Safe body fragment. Version 2 supplies the React root. No scripts, executable HTML
-              handlers, embedded frames or external resources.
-            </TableCell>
-          </TableRow>
-          <TableRow>
-            <TableCell className="whitespace-normal">app.js</TableCell>
-            <TableCell className="whitespace-normal">
-              Version 1 browser JavaScript, with top-level await but no imports. Version 2 retains
-              this compatibility file and executes the compiled React entry instead.
-            </TableCell>
-          </TableRow>
-          <TableRow>
-            <TableCell className="whitespace-normal">calculations.js</TableCell>
-            <TableCell className="whitespace-normal">
-              Self-contained ES module exporting analyze(input). Runs in a separate Worker.
-            </TableCell>
-          </TableRow>
-          <TableRow>
-            <TableCell className="whitespace-normal">style.css</TableCell>
-            <TableCell className="whitespace-normal">
-              Additional app styling. Version 2 includes generated Tailwind utilities and the
-              supplied Nova theme. External resources remain unavailable.
+              Optional app styles alongside generated Tailwind utilities and the supplied Nova
+              theme. External resources are unavailable.
             </TableCell>
           </TableRow>
         </TableBody>
       </Table>
+      <p>
+        Bundle metadata stores the schema version, name, protocol and declared permissions. It is
+        not a workspace source file. The agent changes permissions with the set_permissions tool.
+      </p>
       <CodeBlock>
         <Pre>
           <code>
@@ -163,13 +141,13 @@ export function SourceContent() {
         </Pre>
       </CodeBlock>
       <p>
-        Version 2 imports React, stock shadcn primitives from <code>@/components/ui/*</code>,
-        reusable capability components from <code>@cd80/components</code>, and typed platform
-        capabilities from <code>@cd80/sdk</code>. Build dependencies and the entry point are
-        platform-owned, not editable package configuration. Bundles are limited to 44 source files
-        and 200 KB of source; the upload limit is 250 KB. Imported updates must retain the app's
-        existing protocol. Import source while an app is selected to apply an update; choose New
-        chat first to create a separate app.
+        Apps import React, stock shadcn primitives from <code>@/components/ui/*</code>, reusable
+        capability components from <code>@cd80/components</code>, and typed platform capabilities
+        from <code>@cd80/sdk</code>. Build dependencies and the entry point are platform-owned, not
+        editable package configuration. Bundles are limited to 44 source files and 200 KB of source;
+        the upload limit is 250 KB. Imported updates must retain the app's existing protocol. Import
+        source while an app is selected to apply an update; choose New chat first to create a
+        separate app.
       </p>
     </>
   );
@@ -178,31 +156,32 @@ export function SdkContent() {
   return (
     <>
       <p>
-        The host installs <code>window.cd80</code> before your app runs. Its calls use a validated
-        message bridge. Applications receive no model, database, or provider credentials.
+        Import typed capabilities from <code>@cd80/sdk</code>. The host provides an isolated message
+        bridge; applications receive no model, database or provider credentials.
       </p>
       <CodeBlock>
         <Pre>
-          <code>{`const inputs = await cd80.call("storage.read", { key: "inputs" });
-const result = await cd80.call("finance.calculate", inputs);
-document.getElementById("result").textContent = JSON.stringify(result);
-cd80.ready();
+          <code>{`import { cd80, portfolioInputSchema } from '@cd80/sdk';
 
-// Active verified apps may save shared inputs. Failed builds cannot write.
-await cd80.call("storage.write", { key: "inputs", value: inputs });`}</code>
+const inputs = await cd80.storage.read('inputs', portfolioInputSchema);
+if (inputs) {
+  const result = await cd80.finance.portfolio(inputs);
+  console.log(result.totalValue);
+}
+await cd80.storage.write('note', 'Saved by the active app');`}</code>
         </Pre>
       </CodeBlock>
       <p>
-        React apps import <code>cd80</code> from <code>@cd80/sdk</code> for the same capabilities
-        with typed requests. Import UI primitives from <code>@/components/ui/*</code>; they are real
-        shadcn components bundled with React. <code>@cd80/components</code> supplies MetricCard,
-        DataTable, PluginPanel and AIExplanationPanel. The fixed shell mounts the default export
-        from <code>src/App.tsx</code> and reports readiness.
+        Import stock shadcn primitives from <code>@/components/ui/*</code>.
+        <code>@cd80/components</code> supplies MetricCard, DataTable, PluginPanel and
+        AIExplanationPanel. The fixed shell mounts the default export from
+        <code>src/App.tsx</code>, provides TanStack Query and reports readiness.
       </p>
       <p>
-        Calls return a Promise and reject on missing permissions, invalid data, or unavailable
-        services. Call <code>cd80.ready()</code> after rendering. Use DOM textContent or escape user
-        data before inserting HTML.
+        Calls return a Promise and reject on missing permissions, invalid data or unavailable
+        services. Unknown storage and plugin data becomes typed only after validation with the
+        caller's schema. The application can inspect supplied starter sources in Code; those
+        dependencies and build configuration remain platform-owned.
       </p>
     </>
   );
@@ -293,14 +272,13 @@ export function VerificationContent() {
   return (
     <>
       <p>
-        Version 2 first type-checks and bundles TSX against the fixed React/shadcn starter in a
+        Each build first type-checks and bundles TSX against the fixed React/shadcn starter in a
         bounded build worker. Only approved imports and workspace source paths can resolve. The
-        compiled browser bundle runs under the same opaque iframe, CSP and capability bridge as
-        version 1, without direct networking or credentials. Every build and source import checks
-        its manifest, source syntax, required permissions, potential embedded credentials, HTML
-        isolation, exported calculation function, protocol numerical fixture, boundary values, and
-        invalid inputs. Calculation checks execute in Miniflare/workerd in local and self-hosted
-        modes, without provider secrets or outbound network.
+        compiled browser bundle runs under an opaque iframe with CSP and the capability bridge,
+        without direct networking or credentials. Every build checks metadata, source syntax,
+        required permissions, potential embedded credentials and the fixed financial capability's
+        protocol fixture, boundary values and invalid inputs. Financial calculations execute on the
+        platform, not in generated calculation files.
       </p>
       <p>
         These tests validate the published protocol contract. They do not certify every additional
@@ -345,10 +323,9 @@ export function ConversationContent() {
       </p>
       <p>
         New workspaces use the React/TSX starter with editable app components and supplied shadcn
-        primitives. Existing version 1 apps keep their plain JavaScript source contract. The shell
-        is isolated from host files, secrets and networking, and is not a package-install
-        environment. Deployment type-checks version 2 source, builds the fixed starter and runs
-        protocol and isolation checks before automatically activating the site.
+        primitives. The shell is isolated from host files, secrets and networking, and is not a
+        package-install environment. Deployment type-checks source, builds the fixed starter and
+        runs protocol and isolation checks before automatically activating the site.
       </p>
     </>
   );
@@ -368,14 +345,15 @@ export function PluginsContent() {
         server and are excluded from plugin metadata, tool results, and generated source.
       </p>
       <p>
-        The AI enables the selected plugin for an app and declares the plugin.call permission in
-        cd80.json. The generated app calls an exact registered operation through the browser SDK.
-        The server checks ownership, permissions and parameters, attaches authentication, and
-        returns JSON.
+        The AI enables the selected plugin for an app and declares the plugin.call permission
+        through the set_permissions tool. The generated app calls an exact registered operation
+        through the browser SDK. The server checks ownership, permissions and parameters, attaches
+        authentication, and returns JSON.
       </p>
       <CodeBlock>
         <Pre>
-          <code>{`const weather = await cd80.call("plugin.call", {
+          <code>{`import { cd80 } from '@cd80/sdk';
+const weather = await cd80.plugins.call({
   pluginId: "registered-plugin-id",
   operationId: "getWeather",
   parameters: { city: "London" }

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../packages/backend/convex/_generated/api";
 import type { Application } from "../apps/web/src/lib/contracts";
-import { disposeRuntimes, sourceHash, verify } from "../apps/web/src/server/runtime";
+import { sourceHash, verify } from "../apps/web/src/server/runtime";
 import { configuredEnvironment, platformRoot } from "./environment";
 
 const env = configuredEnvironment();
@@ -61,7 +61,6 @@ for (const example of examples.filter((app) => exampleIds.has(app.id))) {
   } finally {
     if (previousLocalMode === undefined) delete process.env.CD80_LOCAL_MODE;
     else process.env.CD80_LOCAL_MODE = previousLocalMode;
-    await disposeRuntimes();
   }
   assert.ok(verification.passed, "Example must pass current release checks");
   const app: Application = {

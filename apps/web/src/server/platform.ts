@@ -88,7 +88,7 @@ export async function snapshot(access: Access, includeMessages = true, statusOnl
       modelConfigured: !!modelConfiguration(config).apiKey,
       tushareConfigured: !!config.TUSHARE_TOKEN,
       hostedDatabaseConfigured: !!config.VITE_CONVEX_URL,
-      runtime: "Miniflare workerd sandbox",
+      runtime: "React browser preview with trusted server capabilities",
     },
   };
 }
@@ -136,6 +136,8 @@ export async function applyRelease(app: Application, release: Release) {
   app.preview = null;
   app.spec = release.spec;
   app.name = release.spec.name;
+  app.workspace = release.bundle;
+  app.workspaceSpec = release.spec;
   return true;
 }
 async function build(

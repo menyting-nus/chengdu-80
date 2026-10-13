@@ -104,10 +104,12 @@ try {
   await page.getByText("Mandatory checks passed", { exact: true }).waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("tab", { name: "Code", exact: true }).click();
-  await page.getByRole("textbox", { name: "app.js source (read-only)", exact: true }).waitFor();
+  await page
+    .getByRole("textbox", { name: "src/App.tsx source (read-only)", exact: true })
+    .waitFor();
   assert(
     (await page.locator(".line-numbers").count()) > 13,
-    "Minified source must display formatted lines",
+    "TSX source must display formatted lines",
   );
   const unchanged = (await snapshot()).apps.find((a) => a.id === initialSourceApp.id);
   assert.deepEqual(
@@ -115,9 +117,9 @@ try {
     initialSourceApp.current?.bundle,
     "Viewer formatting must not change stored source",
   );
-  await page.getByRole("button", { name: "calculations.js", exact: true }).click();
+  await page.getByRole("button", { name: "sdk.ts", exact: true }).click();
   const editor = page.getByRole("textbox", {
-    name: "calculations.js source (read-only)",
+    name: "starter/sdk/sdk.ts source (read-only)",
     exact: true,
   });
   await editor.waitFor();
@@ -130,7 +132,7 @@ try {
         ),
       ).size > 1,
   );
-  assert((await page.locator(".view-lines").innerText()).includes("analyze"));
+  assert((await page.locator(".view-lines").innerText()).includes("portfolio"));
   const before = await page.locator(".view-lines").innerText();
   await editor.focus();
   await page.keyboard.type("THIS_MUST_NOT_WRITE");
@@ -223,7 +225,9 @@ try {
   assert(page.url().includes("#strategy"));
   const contract = await fetch(base + "/api/docs");
   assert(contract.ok);
-  results.push("Fumadocs navigation, code copy, search, table of contents, and legacy links");
+  results.push(
+    "Fumadocs navigation, code copy, search, table of contents, and documentation links",
+  );
   await page.goto(base + "/app/" + initial.id);
   await page.locator('iframe[aria-busy="false"]').waitFor();
   results.push("Developer docs and standalone app routes");

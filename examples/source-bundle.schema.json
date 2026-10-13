@@ -7,7 +7,7 @@
       "properties": {
         "schemaVersion": {
           "type": "number",
-          "const": 1
+          "const": 2
         },
         "name": {
           "type": "string",
@@ -19,7 +19,7 @@
           "enum": ["portfolio", "screening", "strategy"]
         },
         "permissions": {
-          "maxItems": 9,
+          "maxItems": 10,
           "type": "array",
           "items": {
             "type": "string",
@@ -32,7 +32,8 @@
               "finance.backtest",
               "storage.read",
               "storage.write",
-              "ai.explain"
+              "ai.explain",
+              "plugin.call"
             ]
           }
         }
@@ -43,28 +44,17 @@
     "files": {
       "type": "object",
       "properties": {
-        "index.html": {
+        "src/App.tsx": {
           "type": "string",
-          "minLength": 20,
+          "minLength": 1,
           "maxLength": 60000
-        },
-        "app.js": {
-          "type": "string",
-          "minLength": 10,
-          "maxLength": 60000
-        },
-        "calculations.js": {
-          "type": "string",
-          "minLength": 10,
-          "maxLength": 30000
-        },
-        "style.css": {
-          "type": "string",
-          "maxLength": 30000
         }
       },
-      "required": ["index.html", "app.js", "calculations.js", "style.css"],
-      "additionalProperties": false
+      "required": ["src/App.tsx"],
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 60000
+      }
     }
   },
   "required": ["manifest", "files"],

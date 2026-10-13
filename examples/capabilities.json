@@ -1,4 +1,8 @@
 {
+  "plugin.call": {
+    "input": "{pluginId:string, operationId:string, parameters:object}. Only system-registered plugins enabled for this app.",
+    "output": "JSON response from the plugin operation. Provider credentials stay on the server."
+  },
   "market.prices": {
     "input": "{symbol:string, provider:'fixtures'|'tushare'}",
     "output": "{symbol, prices:[{date:'YYYY-MM-DD',close:number}], meta:{provider,synthetic,currency,coverage,warning}}"
@@ -9,7 +13,7 @@
   },
   "finance.calculate": {
     "input": "Selected protocol input object",
-    "output": "Your calculations.js analyze(input) result"
+    "output": "Verified built-in result for the selected financial protocol"
   },
   "finance.portfolio": {
     "input": "{holdings:[{symbol,units,cost,price}],cash:number}. Cost and price are CNY per unit; units is the quantity held.",
@@ -29,7 +33,7 @@
   },
   "storage.write": {
     "input": "{key:string,value:JSON}",
-    "output": "{saved:true}. Accepted releases only; previews are read-only."
+    "output": "{saved:true}. Active verified releases only; failed builds cannot write."
   },
   "ai.explain": {
     "input": "{question:string,result:JSON}",

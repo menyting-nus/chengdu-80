@@ -1,46 +1,114 @@
 import { capabilityContracts, protocolFor, type AppBundle, type ProductSpec } from "./contracts";
 
-const validator = `function finite(v, min = 0) { if(typeof v !== 'number' || !Number.isFinite(v) || v < min) throw new Error('Invalid numeric input'); return v; }\n`;
 export function sampleBundle(spec: ProductSpec): AppBundle {
-  const implementations = {
-    portfolio: `export function analyze(d) { if (!Array.isArray(d.holdings)) throw new Error('Holdings required'); const cash=finite(d.cash??0); const p=d.holdings.map(h=>({symbol:h.symbol,value:finite(h.units)*finite(h.price),invested:finite(h.units)*finite(h.cost)})); const totalValue=p.reduce((s,h)=>s+h.value,cash); const invested=p.reduce((s,h)=>s+h.invested,0); const profit=totalValue-cash-invested; return {totalValue,profit,returnPct:invested?profit/invested*100:0,concentrationPct:totalValue?Math.max(0,...p.map(h=>h.value))/totalValue*100:0,positions:p.map(h=>({...h,weightPct:totalValue?h.value/totalValue*100:0}))}; }`,
-    screening: `export function analyze(d) { if(!Array.isArray(d.assets)) throw new Error('Assets required'); const maxPE=finite(d.maxPE),minYield=finite(d.minYield); return {selected:d.assets.filter(a=>typeof a.pe==='number'&&Number.isFinite(a.pe)&&a.pe>0&&a.pe<=maxPE&&typeof a.dividendYield==='number'&&Number.isFinite(a.dividendYield)&&a.dividendYield>=minYield).map(a=>a.symbol),missing:d.assets.filter(a=>a.pe==null||a.dividendYield==null).length}; }`,
-    strategy: `export function analyze(d) { if(!Array.isArray(d.prices)||d.prices.length<2) throw new Error('At least two prices required'); const prices=d.prices.map(p=>finite(p,Number.MIN_VALUE)); let peak=prices[0],maxDrawdownPct=0; for(const p of prices){peak=Math.max(peak,p);maxDrawdownPct=Math.max(maxDrawdownPct,(peak-p)/peak*100);} const grossReturnPct=(prices.at(-1)/prices[0]-1)*100; return {grossReturnPct,maxDrawdownPct,netReturnPct:grossReturnPct-finite(d.feeBps??0)*2/100}; }`,
-  };
+  const protocol = spec.protocol;
+  const inputSchema =
+    protocol === "portfolio"
+      ? "portfolioInputSchema"
+      : protocol === "screening"
+        ? "screenInputSchema"
+        : "backtestInputSchema";
+  const method =
+    protocol === "portfolio" ? "portfolio" : protocol === "screening" ? "screen" : "backtest";
+  const metrics =
+    protocol === "portfolio"
+      ? `<MetricCard label="Total value · CNY" value={format(result.totalValue)} /><MetricCard label="Unrealized profit · CNY" value={format(result.profit)} /><MetricCard label="Return" value={format(result.returnPct) + '%'} /><MetricCard label="Largest position" value={format(result.concentrationPct) + '%'} />`
+      : protocol === "screening"
+        ? `<MetricCard label="Matching assets" value={result.selected.length} /><MetricCard label="Maximum PE" value={inputs.query.data.maxPE} /><MetricCard label="Minimum yield" value={inputs.query.data.minYield + '%'} /><MetricCard label="Missing records" value={result.missing} />`
+        : `<MetricCard label="Gross return" value={format(result.grossReturnPct) + '%'} /><MetricCard label="Net return" value={format(result.netReturnPct) + '%'} /><MetricCard label="Max drawdown" value={format(result.maxDrawdownPct) + '%'} /><MetricCard label="Price observations" value={inputs.query.data.prices.length} />`;
+  const details =
+    protocol === "portfolio"
+      ? `<DataTable caption="Portfolio positions" rows={result.positions} getRowKey={(row) => row.symbol} columns={[
+        {key:'symbol',header:'Position',render:row=>row.symbol},
+        {key:'value',header:'Value · CNY',render:row=>format(row.value)},
+        {key:'invested',header:'Invested · CNY',render:row=>format(row.invested)},
+        {key:'weight',header:'Weight',render:row=>format(row.weightPct)+'%'},
+      ]} />`
+      : protocol === "screening"
+        ? `<DataTable caption="Asset shortlist" rows={inputs.query.data.assets} getRowKey={(row) => row.symbol} columns={[
+          {key:'symbol',header:'Asset',render:row=>row.symbol},
+          {key:'pe',header:'PE',render:row=>row.pe??'Missing'},
+          {key:'yield',header:'Dividend yield',render:row=>row.dividendYield===null?'Missing':row.dividendYield+'%'},
+          {key:'status',header:'Result',render:row=>result.selected.includes(row.symbol)?'Matches':'Excluded'},
+        ]} />`
+        : `<DataTable caption="Historical price observations" rows={inputs.query.data.prices.map((price,index)=>({index,price}))} getRowKey={(row)=>String(row.index)} columns={[
+          {key:'index',header:'Observation',render:row=>row.index+1},
+          {key:'price',header:'Price',render:row=>format(row.price)},
+        ]} /><p>Cash benchmark: 0% return. Fees use a simple two-transaction approximation at {inputs.query.data.feeBps} bps per transaction.</p>`;
   return {
     manifest: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       name: spec.name,
-      protocol: spec.protocol,
+      protocol,
       permissions: [
-        "market.prices",
-        "market.assets",
         "finance.calculate",
         "storage.read",
         "storage.write",
         "ai.explain",
+        `finance.${method}`,
       ],
     },
     files: {
-      "index.html": `<main id="app"><header><span class="eyebrow">FINANCIAL WORKSPACE</span><h1 id="title"></h1><p id="purpose"></p></header><div id="notice" class="notice">Synthetic fixtures · CNY · Not current market quotes</div><section id="metrics" class="metrics"></section><section class="panel"><h2 id="chart-title">Analysis</h2><div id="chart"></div><div id="table"></div></section><details class="panel"><summary>Edit shared inputs</summary><p>Changes are saved to this app. Paste valid JSON or edit the values below.</p><textarea id="inputs" aria-label="Shared financial inputs"></textarea><button id="save">Save and recalculate</button></details><section class="panel"><div class="explain-head"><h2>Interpret the result</h2><button id="explain">Explain with AI</button></div><p id="explanation">Numbers come from the calculation module. AI can explain the result when a model is connected.</p></section><div id="error" role="alert"></div><footer>Historical and sample analysis. No investment advice.</footer></main>`,
-      "calculations.js": validator + implementations[spec.protocol],
-      "style.css": `*{box-sizing:border-box}body{margin:0;background:#f7f9fc;color:#15243b;font-family:Arial,sans-serif;font-size:14px}main{max-width:1040px;margin:auto;padding:32px}header{margin-bottom:24px}.eyebrow{font-size:10px;font-weight:700;letter-spacing:2px;color:#4768ab}h1{font-size:30px;letter-spacing:-1px;margin:12px 0}p{color:#607086;line-height:1.65}h2{font-size:15px;margin:0 0 18px}.notice{background:#eaf0fb;padding:10px 14px;border-radius:6px;font-size:12px;color:#335582;margin-bottom:22px}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-bottom:22px}.metric{background:white;border:1px solid #e2e8f0;border-radius:9px;padding:18px}.metric span{font-size:11px;color:#69788d}.metric strong{display:block;font-size:25px;font-weight:600;margin-top:12px;font-variant-numeric:tabular-nums}.panel{background:white;border:1px solid #e2e8f0;border-radius:9px;padding:22px;margin-bottom:18px}table{width:100%;border-collapse:collapse}td,th{padding:12px 8px;border-bottom:1px solid #e8edf4;text-align:left;font-size:12px}th{color:#718095;font-weight:500}td:not(:first-child){font-variant-numeric:tabular-nums}.bar-row{display:flex;align-items:center;gap:12px;margin:14px 0}.bar-label{min-width:110px;font-size:12px}.bar-track{flex:1;background:#edf2fb;height:12px;border-radius:3px;overflow:hidden}.bar{height:100%;background:#416bd7}.bar-value{width:65px;text-align:right;font-size:12px}svg{width:100%;height:160px}textarea{width:100%;min-height:210px;padding:12px;border:1px solid #cbd5e1;background:#f8fafc;border-radius:5px;font:12px/1.5 monospace;resize:vertical}button{background:#284fac;color:white;border:0;border-radius:5px;padding:10px 14px;cursor:pointer;font-size:12px}button:disabled{opacity:.5}#save{margin-top:12px}.explain-head{display:flex;justify-content:space-between;align-items:baseline}summary{cursor:pointer;font-weight:600}footer{font-size:11px;color:#7c899a;padding:8px 0}#error{color:#ba3344;white-space:pre-wrap}@media(max-width:550px){main{padding:18px}h1{font-size:25px}.metrics{grid-template-columns:1fr 1fr}.panel{padding:15px}table{display:block;overflow:auto}}`,
-      "app.js": `const spec=${JSON.stringify(spec).replace(/</g, "\\u003c")};
-const el=id=>document.getElementById(id); const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); const fmt=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:2});
-el('title').textContent=spec.name; el('purpose').textContent=spec.purpose;
-let data; let result;
-function metric(label,value){return '<div class="metric"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong></div>';}
-function table(headers,rows){return '<table><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';}
-async function render(){ el('error').textContent=''; result=await cd80.call('finance.calculate',data); el('inputs').value=JSON.stringify(data,null,2);const meta=await cd80.call('storage.read',{key:'_provenance'});if(meta)el('notice').textContent=meta.provider+' · '+(meta.currency||'CNY')+' · '+(meta.coverage||'')+' · '+meta.warning;
- if(spec.protocol==='portfolio'){el('metrics').innerHTML=metric('Total value · CNY',fmt(result.totalValue))+metric('Unrealized profit · CNY',fmt(result.profit))+metric('Return',fmt(result.returnPct)+'%')+metric('Largest position',fmt(result.concentrationPct)+'%');el('chart-title').textContent='Portfolio composition';el('chart').innerHTML=(result.positions||[]).map(p=>'<div class="bar-row"><span class="bar-label">'+esc(p.symbol)+'</span><div class="bar-track"><div class="bar" style="width:'+Math.max(0,Math.min(100,p.weightPct))+'%"></div></div><span class="bar-value">'+fmt(p.weightPct)+'%</span></div>').join('');el('table').innerHTML=table(['Position','Units','Cost','Price'],data.holdings.map(h=>[h.symbol,fmt(h.units),fmt(h.cost),fmt(h.price)]));}
- else if(spec.protocol==='screening'){el('metrics').innerHTML=metric('Matching assets',result.selected.length)+metric('Maximum PE',data.maxPE)+metric('Minimum yield',data.minYield+'%')+metric('Missing records',result.missing??0);el('chart-title').textContent='Asset shortlist';el('chart').textContent='Selected: '+(result.selected.join(', ')||'No matches');el('table').innerHTML=table(['Asset','PE','Dividend yield','Result'],data.assets.map(a=>[a.symbol,a.pe??'Missing',a.dividendYield==null?'Missing':a.dividendYield+'%',result.selected.includes(a.symbol)?'Matches':'Excluded']));}
- else {el('metrics').innerHTML=metric('Gross return',fmt(result.grossReturnPct)+'%')+metric('Net return',fmt(result.netReturnPct)+'%')+metric('Max drawdown',fmt(result.maxDrawdownPct)+'%')+metric('Price observations',data.prices.length);el('chart-title').textContent='Historical price path';let min=Math.min(...data.prices),max=Math.max(...data.prices);const pts=data.prices.map((p,i)=>(i/(data.prices.length-1)*700)+','+(140-(p-min)/(max-min||1)*120)).join(' ');el('chart').innerHTML='<svg viewBox="0 0 700 160" role="img" aria-label="Historical price chart"><polyline points="'+pts+'" fill="none" stroke="#416bd7" stroke-width="3"/></svg>';el('table').textContent='Cash benchmark: 0% return. Fees use a simple two-transaction approximation at '+data.feeBps+' bps per transaction.';}}
-el('save').onclick=async()=>{try{const next=JSON.parse(el('inputs').value);await cd80.call('finance.calculate',next);await cd80.call('storage.write',{key:'inputs',value:next});data=next;await render();}catch(e){el('error').textContent=e.message;}};
-el('explain').onclick=async()=>{el('explain').disabled=true;try{el('explanation').textContent=await cd80.call('ai.explain',{question:'Explain these verified results in plain English. Disclose data limits and avoid recommendations.',result});}catch(e){el('explanation').textContent=e.message;}finally{el('explain').disabled=false;}};
-try{data=await cd80.call('storage.read',{key:'inputs'});await render();cd80.ready();}catch(e){el('error').textContent=e.message;cd80.ready();}`,
+      "src/App.tsx": `import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { z } from 'zod';
+import { cd80, useStoredValue, ${inputSchema} } from '@cd80/sdk';
+import { MetricCard, DataTable, AIExplanationPanel } from '@cd80/components';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Field, FieldLabel, FieldGroup } from '@/components/ui/field';
+
+const spec = ${JSON.stringify({ name: spec.name, purpose: spec.purpose })};
+const sourceSchema = z.object({ provider:z.string(),synthetic:z.boolean(),currency:z.string().optional(),coverage:z.string().optional(),warning:z.string() });
+${protocol === "screening" ? "" : "const format = (value:number) => value.toLocaleString('en-US',{maximumFractionDigits:2});"}
+
+export default function App() {
+  const inputs = useStoredValue('inputs',${inputSchema});
+  const provenance = useStoredValue('_provenance',sourceSchema);
+  const [draft,setDraft] = useState('');
+  const [validationError,setValidationError] = useState('');
+  useEffect(()=>{if(inputs.query.data) setDraft(JSON.stringify(inputs.query.data,null,2));},[inputs.query.data]);
+  const analysis = useQuery({
+    queryKey:['analysis',inputs.query.data],
+    queryFn:()=>cd80.finance.${method}(${inputSchema}.parse(inputs.query.data)),
+    enabled:inputs.query.isSuccess && inputs.query.data!==null,
+    retry:false,
+  });
+  function save() {
+    try {
+      const value:unknown = JSON.parse(draft);
+      const parsed = ${inputSchema}.parse(value);
+      setValidationError('');
+      inputs.write.mutate(parsed);
+    } catch(error) { setValidationError(error instanceof Error ? error.message : 'Invalid inputs'); }
+  }
+  const result = analysis.data;
+  const error = inputs.query.error ?? provenance.query.error ?? analysis.error ?? inputs.write.error;
+  return <main className="flex flex-col gap-6 p-6">
+    <header><h1 className="text-3xl font-semibold">{spec.name}</h1><p>{spec.purpose}</p></header>
+    {provenance.query.data ? <Alert><AlertTitle>{provenance.query.data.provider}</AlertTitle><AlertDescription>{provenance.query.data.currency} · {provenance.query.data.coverage} · {provenance.query.data.synthetic ? 'Synthetic fixtures. ' : ''}{provenance.query.data.warning}</AlertDescription></Alert> : null}
+    {error || validationError ? <Alert variant="destructive"><AlertTitle>Unable to complete request</AlertTitle><AlertDescription>{validationError || error?.message}</AlertDescription></Alert> : null}
+    {inputs.query.isPending || analysis.isFetching ? <p role="status">Loading financial data…</p> : null}
+    {inputs.query.isSuccess && inputs.query.data===null ? <p>No saved financial inputs.</p> : null}
+    {result && inputs.query.data ? <>
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">${metrics}</section>
+      ${details}
+      <AIExplanationPanel question="Explain these verified results in plain English. Disclose data limits and avoid recommendations." result={result} />
+    </> : null}
+    <Card><CardHeader><CardTitle>Edit shared inputs</CardTitle></CardHeader><CardContent>
+      <FieldGroup><Field><FieldLabel htmlFor="financial-inputs">Shared financial inputs</FieldLabel><Textarea id="financial-inputs" value={draft} onChange={event=>setDraft(event.target.value)} className="min-h-60" /></Field>
+      <Field><Button disabled={inputs.write.isPending || !inputs.query.data} onClick={save}>{inputs.write.isPending?'Saving…':'Save and recalculate'}</Button></Field></FieldGroup>
+    </CardContent></Card>
+    <footer>Historical and sample analysis. No investment advice.</footer>
+  </main>;
+}
+`,
     },
   };
 }
+
 export function protocolInstructions(spec: ProductSpec) {
-  return `Application protocol ${spec.protocol}, version 1.\n${protocolFor(spec.protocol).rules.join("\n")}\nRequired numerical contract: ${JSON.stringify(protocolFor(spec.protocol).fixture)}\nExport analyze(input) from calculations.js. Keep calculation code self-contained and pure. Reject invalid inputs by throwing Error or returning {error:string}; the error field is reserved for failure and is never successful financial data. You may implement additional financial logic, but must preserve the protocol contract. Your browser app must use window.cd80.call(capability,input), and cd80.ready() when rendered. Public capability contracts: ${JSON.stringify(capabilityContracts)}. Prefer verified finance.portfolio, finance.screen, and finance.backtest where applicable, declaring each used capability. The same contract is available in /docs. No external network access, imports, CDN scripts, or secrets. Return the exact bundle schema with manifest and files index.html, app.js, calculations.js, style.css. The HTML is a body fragment without scripts, event handlers, external links, or embedded documents. App JavaScript may use top-level await. Call finance.calculate for your analyze module; never duplicate financial numbers with AI. Use storage.read/write with key inputs. Read storage.read({key:'_provenance'}) for source metadata and display provider, synthetic status, coverage, currency, and warnings. Display data provenance. Freely design the app to satisfy the confirmed spec.`;
+  return `Application protocol ${spec.protocol}, version 2.\n${protocolFor(spec.protocol).rules.join("\n")}\nFinancial math runs in fixed platform capabilities, never in generated source. Use cd80.finance.portfolio, cd80.finance.screen, cd80.finance.backtest or cd80.finance.calculate(input,resultSchema) from @cd80/sdk when needed, declaring each capability used. This does not require financial UI for general sites. Public capability contracts: ${JSON.stringify(capabilityContracts)}. Return only schemaVersion 2 manifest and files: mandatory src/App.tsx exporting a default React component, optional src/styles.css and local src/components/**/*.ts(x). No index.html, app.js, calculations.js, package.json, build configuration or generated assets. The trusted entry supplies React, QueryClientProvider and readiness. Supported imports: react, lucide-react, zod, @tanstack/react-query, @cd80/sdk, @cd80/components, @/components/ui/<installed-component> and local source. Use stock Nova shadcn UI. SDK storage.read(key,zodSchema) validates persisted values and returns null when absent; useStoredValue(key,schema) returns {query,write}. Inputs use the 'inputs' key. Read '_provenance' and show actual provider, synthetic status, currency, coverage and warnings when displaying financial data. System-registered plugins use cd80.plugins.callParsed({pluginId,operationId,parameters},zodSchema); never invent plugin data. No direct network APIs, external imports, macros, secrets or dependency installation. Build the actual product with typed components and server capabilities.`;
 }

@@ -107,7 +107,7 @@ export function Studio() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("preview");
-  const [activeSourceFile, setActiveSourceFile] = useState<SourcePath>("app.js");
+  const [activeSourceFile, setActiveSourceFile] = useState<SourcePath>("src/App.tsx");
   const [review, setReview] = useState<"checks" | "spec" | null>(null);
   const [imported, setImported] = useState<AppBundle | null>(null);
   const [providerResult, setProviderResult] = useState<unknown>(null);
@@ -147,18 +147,15 @@ export function Studio() {
       : selectedApp;
   const release = app && (app.current ?? app.preview);
   const workspaceBundle = app?.workspace ?? release?.bundle;
-  const defaultSourceFile =
-    workspaceBundle?.manifest.schemaVersion === 2 ? "src/App.tsx" : "app.js";
   useEffect(() => {
-    setActiveSourceFile(defaultSourceFile);
-  }, [app?.id, defaultSourceFile]);
+    setActiveSourceFile("src/App.tsx");
+  }, [app?.id]);
   const displaySourceFile =
-    activeSourceFile === "cd80.json" ||
-    (workspaceBundle &&
-      (Object.hasOwn(workspaceBundle.files, activeSourceFile) ||
-        (workspaceBundle.manifest.schemaVersion === 2 && activeSourceFile.startsWith("starter/"))))
+    workspaceBundle &&
+    (Object.hasOwn(workspaceBundle.files, activeSourceFile) ||
+      activeSourceFile.startsWith("starter/"))
       ? activeSourceFile
-      : defaultSourceFile;
+      : "src/App.tsx";
   const refreshVersion = useRef(0);
   async function refresh() {
     if (reactive && snapshot) return snapshot;
@@ -209,7 +206,7 @@ export function Studio() {
     setChatKey(id ?? crypto.randomUUID());
     setTab("preview");
     setReview(null);
-    setActiveSourceFile("app.js");
+    setActiveSourceFile("src/App.tsx");
     window.history.replaceState(null, "", id ? `/#app=${id}` : "/");
   }, []);
   useEffect(() => {
@@ -246,23 +243,9 @@ export function Studio() {
         Array.from(files).reduce((n, f) => n + f.size, 0) > 250000
       )
         throw new Error("Source upload exceeds 250 KB.");
-      let bundle;
-      if (files.length === 1 && files[0].name.endsWith(".json"))
-        bundle = JSON.parse(await files[0].text());
-      else {
-        const entries = await Promise.all(
-          Array.from(files).map(async (f) => [f.name, await f.text()] as const),
-        );
-        const map = Object.fromEntries(entries);
-        if (!map["cd80.json"])
-          throw new Error(
-            "Select cd80.json, index.html, app.js, calculations.js, and style.css together.",
-          );
-        bundle = {
-          manifest: JSON.parse(map["cd80.json"]),
-          files: Object.fromEntries(entries.filter(([name]) => name !== "cd80.json")),
-        };
-      }
+      if (files.length !== 1 || !files[0].name.endsWith(".json"))
+        throw new Error("Upload one JSON source bundle containing React/TSX files and metadata.");
+      const bundle: unknown = JSON.parse(await files[0].text());
       setImported(bundleSchema.parse(bundle));
     });
     if (file.current) file.current.value = "";
@@ -318,7 +301,7 @@ export function Studio() {
                 size="sm"
                 onClick={() =>
                   download(
-                    `${app!.name.replaceAll(/[^a-zA-Z0-9]/g, "-")}.cd80.json`,
+                    `${app!.name.replaceAll(/[^a-zA-Z0-9]/g, "-")}.bundle.json`,
                     JSON.stringify(release.bundle, null, 2),
                   )
                 }
@@ -415,8 +398,7 @@ export function Studio() {
             <input
               ref={file}
               type="file"
-              accept=".json,.html,.js,.css"
-              multiple
+              accept=".json"
               hidden
               onChange={(e) => void importFiles(e.target.files)}
             />

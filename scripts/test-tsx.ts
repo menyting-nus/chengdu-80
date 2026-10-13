@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 // Failure modes: broken TSX/types or forbidden imports activate; nested modules do
 // not resolve; supplied shadcn styles/SDK fail at runtime; readonly viewer mutates
-// source; failed updates lose data; iframe bypasses its network boundary; v1 breaks.
+// source; failed updates lose data; iframe bypasses its network boundary.
 // Browser smoke checks are separate from published protocol verification.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -10,7 +10,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser } from "playwright";
 import { protocols, type Application, type AppBundle } from "../apps/web/src/lib/contracts";
-import { sampleBundle } from "../apps/web/src/lib/samples";
 import { tsxStarter } from "../apps/web/src/lib/tsx-starter";
 
 const dataDir = await mkdtemp(join(tmpdir(), "cd80-tsx-test-"));
@@ -68,7 +67,10 @@ try {
   assert(ready, "Isolated test server did not start");
   const spec = { ...protocols[0]!.defaultSpec, name: "React portfolio fixture" };
   const bundle: AppBundle = tsxStarter(spec);
-  bundle.manifest.permissions.push("finance.portfolio");
+  assert(
+    Object.keys(bundle.files).every((name) => name === "src/App.tsx" || name === "src/styles.css"),
+  );
+  bundle.manifest.permissions = ["storage.read", "storage.write", "finance.portfolio"];
   bundle.files["src/components/summary.tsx"] =
     `export default function Summary({ value }: { value: number }) { return <output aria-label="Portfolio total">{value}</output>; }`;
   bundle.files["src/App.tsx"] = `import { useEffect, useState } from 'react';
@@ -99,7 +101,9 @@ export default function App() {
   const assets = (await assetResponse.json()) as { javascript: string; css: string };
   assert(assets.javascript.length > 1000 && assets.css.length > 1000);
   await writeFile(`${artifacts}/compiled-app.js`, assets.javascript);
-  pass("Version 2 passes source/type/build and independent protocol checks; compiled assets load");
+  pass(
+    "React-only starter passes source policy, type checking and compilation; compiled assets load",
+  );
 
   const sourceResponse = await fetch(`${base}/api/app-source?appId=${app.id}`);
   assert(sourceResponse.ok, "Actual starter source must be available to the owning workspace");
@@ -214,28 +218,6 @@ export default function App() {
     .getByRole("textbox", { name: "src/components/summary.tsx source (read-only)", exact: true })
     .waitFor();
   await page.locator(".view-lines").filter({ hasText: "Portfolio total" }).waitFor();
-  await page.getByRole("button", { name: "app.js", exact: true }).click();
-  await page.getByRole("textbox", { name: "app.js source (read-only)", exact: true }).waitFor();
-  await page.locator(".view-lines").filter({ hasText: "React entry is compiled" }).waitFor();
-  await page.getByRole("button", { name: "App.tsx", exact: true }).click();
-  await page
-    .getByRole("textbox", { name: "src/App.tsx source (read-only)", exact: true })
-    .waitFor();
-  await page.locator('[title="starter/ui/components/button.tsx"]').click();
-  await page
-    .getByRole("textbox", {
-      name: "starter/ui/components/button.tsx source (read-only)",
-      exact: true,
-    })
-    .waitFor();
-  await page.locator(".view-lines").filter({ hasText: "buttonVariants" }).waitFor();
-  await page.locator('[title="starter/ui/styles/globals.css"]').click();
-  await page
-    .getByRole("textbox", { name: "starter/ui/styles/globals.css source (read-only)", exact: true })
-    .waitFor();
-  await page.locator(".view-lines").filter({ hasText: "@import" }).waitFor();
-  await page.screenshot({ path: `${artifacts}/starter-tailwind-source.png`, fullPage: true });
-  await page.getByRole("button", { name: "App.tsx", exact: true }).click();
   await page.screenshot({ path: `${artifacts}/tsx-source-tree.png`, fullPage: true });
   assert(
     externalRequests.every((url) => url === "https://example.com/blocked"),
@@ -286,17 +268,6 @@ export default function App() {
   pass(
     "Invalid TSX, host/path imports, macros, import.meta and direct network source block activation and preserve data",
   );
-  const legacy = await request<Application>({
-    action: "import",
-    bundle: sampleBundle({ ...spec, name: "Legacy browser fixture" }),
-  });
-  assert(legacy.current?.verification.passed);
-  await page.goto(`${base}/#app=${legacy.id}`);
-  await page.reload();
-  await page.locator('iframe[aria-busy="false"]').waitFor();
-  await page.frameLocator("iframe").getByText("Portfolio composition", { exact: true }).waitFor();
-  await page.screenshot({ path: `${artifacts}/legacy-preview.png`, fullPage: true });
-  pass("Legacy version 1 browser apps retain their existing verification and rendering");
   completed = true;
 } finally {
   await writeFile(
