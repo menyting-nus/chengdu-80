@@ -74,10 +74,10 @@ export async function accessFor(request: Request): Promise<Access> {
   if (!session.viewer || !session.accessToken) throw new Error("Authentication required");
   return { ownerId: session.viewer.id, accessToken: session.accessToken };
 }
-export async function snapshot(access: Access) {
+export async function snapshot(access: Access, includeMessages = true) {
   const config = await settings();
   return {
-    apps: await listApps(access),
+    apps: await listApps(access, includeMessages),
     protocols,
     status: {
       local: await localMode(),

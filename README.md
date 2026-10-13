@@ -11,9 +11,11 @@ bun install --frozen-lockfile
 bun run dev:convex
 ```
 
-Open http://127.0.0.1:3001. This starts the real local Convex backend and the Vite development server, with a shared demo workspace and login deferred. No Docker or Convex Cloud account is required. Convex stores apps, conversations, releases, and plugin registrations. Backend state lives in `packages/backend/.convex/local/`; keep it to preserve data across restarts.
+Open http://127.0.0.1:3001. This starts the real local Convex backend and the Vite development server, with a shared demo workspace and login deferred. No Docker or Convex Cloud account is required. Convex stores apps, releases and plugin registrations. Thread titles and turn state live in `threads`; complete TanStack AI messages live in `messages`, indexed by thread and order. Each message retains its ordered text, thinking and tool parts. The sidebar subscribes to thread summaries, while the workspace subscribes only to the selected app and its messages. Backend state lives in `packages/backend/.convex/local/`; keep it to preserve data across restarts.
 
 To import an existing file-backed workspace once, use `bun run dev:convex --import-files .local/review-instance`. Existing IDs are skipped and source files are retained. `CD80_PORT=3002` selects a different frontend port.
+
+Existing embedded chat histories can be migrated through the trusted `platform.migrateChatStorage` action. It is idempotent and preserves source files and message IDs. Generation runs through TanStack AI on the Node server; streaming messages are checkpointed to Convex once per second and flushed when the turn ends. Model context is compacted separately from stored conversation history.
 
 `bun run dev:local` remains an explicit file-backed prototype launcher for isolated fixture tests. It does not use Convex.
 
@@ -50,6 +52,8 @@ Releases require syntax, contract, permission, credential-pattern, numerical fix
 Nine capabilities cover normalized market data, reusable financial functions, custom calculations, shared storage and managed AI. New providers require adapters. `_provenance` is reserved; edited inputs are labelled user-entered. AI explanations use server-recomputed saved inputs.
 
 ## Verification
+
+With the local Convex-backed dev server running and an existing generated conversation, `bun run test:convex` checks normalized storage, migration, access checks, and reactive message updates across two Chrome tabs. It makes one live model call and writes screenshots/results to `.local/convex-tests/`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when using an existing Chrome installation.
 
 ```bash
 bun run test:prototype       # 12 financial, sandbox, hash and persistence checks

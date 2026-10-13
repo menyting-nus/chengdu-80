@@ -21,7 +21,7 @@ export function ConversationNavigation({
   busy,
   openSettings,
 }: {
-  apps: Application[];
+  apps: Pick<Application, "id" | "name" | "chatTitle">[];
   selected: string | null;
   select: (id: string | null) => void;
   busy: boolean;

@@ -62,6 +62,8 @@ const markdownComponents = {
 
 type AgentChatProps = {
   app: Application | null;
+  reactive?: boolean;
+  messagesReady?: boolean;
   connected: boolean;
   disabled: boolean;
   modelName: string;
@@ -345,6 +347,7 @@ export function AgentChat(props: AgentChatProps) {
   const callbacks = useRef(props);
   callbacks.current = props;
   const appId = useRef(props.app?.id);
+  const ownTurn = useRef<string | undefined>(undefined);
   const initialMessages = useRef(props.app?.conversation ?? []);
   const [prompt, setPrompt] = useState("");
   const [localError, setLocalError] = useState<string>();
@@ -361,6 +364,7 @@ export function AgentChat(props: AgentChatProps) {
       appId.current = workspace.id;
       callbacks.current.onWorkspaceCreated(workspace);
     }
+    ownTurn.current = [...messages].reverse().find((message) => message.role === "user")?.id;
     signal.throwIfAborted();
     const response = await fetch("/api/ai/chat", {
       method: "POST",
@@ -385,7 +389,8 @@ export function AgentChat(props: AgentChatProps) {
     fetcher,
     initialMessages: initialMessages.current,
     onChunk: (chunk) => {
-      if (chunk.type === "TOOL_CALL_RESULT") void callbacks.current.onFinish();
+      if (!callbacks.current.reactive && chunk.type === "TOOL_CALL_RESULT")
+        void callbacks.current.onFinish();
     },
     onFinish: () => {
       void Promise.resolve(callbacks.current.onFinish()).catch((error: unknown) =>
@@ -393,6 +398,38 @@ export function AgentChat(props: AgentChatProps) {
       );
     },
   });
+  useEffect(() => {
+    if (!props.reactive || !props.messagesReady || chat.isLoading || !props.app?.conversation)
+      return;
+    // The sender renders its SSE stream without being reset by slower database
+    // checkpoints. Other tabs can render those checkpoints as they arrive.
+    const lastUser = [...chat.messages].reverse().find((message) => message.role === "user");
+    if (chat.error) ownTurn.current = undefined;
+    if (ownTurn.current) {
+      if (!props.app.conversation.some((message) => message.id === ownTurn.current)) return;
+      if (props.app.agentTurn?.id === ownTurn.current && props.app.agentTurn.status === "running")
+        return;
+      ownTurn.current = undefined;
+    }
+    if (
+      !chat.error &&
+      lastUser &&
+      !props.app.conversation.some((message) => message.id === lastUser.id)
+    )
+      return;
+    if (JSON.stringify(chat.messages) !== JSON.stringify(props.app.conversation)) {
+      chat.setMessages(props.app.conversation);
+    }
+  }, [
+    props.reactive,
+    props.messagesReady,
+    props.app?.conversation,
+    props.app?.agentTurn,
+    chat.isLoading,
+    chat.messages,
+    chat.error,
+    chat.setMessages,
+  ]);
   useEffect(() => {
     callbacks.current.onBusyChange?.(chat.isLoading);
     return () => callbacks.current.onBusyChange?.(false);
@@ -426,7 +463,13 @@ export function AgentChat(props: AgentChatProps) {
                     <MessageScrollerItem key={turn.user.id} messageId={turn.user.id} scrollAnchor>
                       <ConversationTurn
                         turn={turn}
-                        active={chat.isLoading && index === turns.length - 1}
+                        active={
+                          index === turns.length - 1 &&
+                          (chat.isLoading ||
+                            (props.reactive === true &&
+                              props.app?.agentTurn?.id === turn.user.id &&
+                              props.app.agentTurn.status === "running"))
+                        }
                         timing={props.app?.turns?.find((run) => run.id === turn.user.id)}
                         results={results}
                         stopped={turn.user.id === stoppedTurn}

@@ -42,10 +42,11 @@ async function localStore<T>(
   queue = task.catch(() => {});
   return task;
 }
-export async function listApps(access: Access): Promise<Application[]> {
+export async function listApps(access: Access, includeMessages = true): Promise<Application[]> {
   if (await localMode())
     return localStore((apps) => apps.filter((a) => a.ownerId === access.ownerId));
   const c = await client(access);
+  if (!includeMessages) return c.query(api.platform.studioApps, {});
   if (await demoMode()) {
     const config = await settings();
     if (!config.PLATFORM_INTERNAL_KEY) throw new Error("PLATFORM_INTERNAL_KEY is missing");
@@ -54,13 +55,26 @@ export async function listApps(access: Access): Promise<Application[]> {
   return c.query(api.platform.list, {});
 }
 export async function findApp(access: Access, id: string): Promise<Application> {
-  const app = (await listApps(access)).find((a) => a.id === id);
+  let app: Application | null | undefined;
+  if (await localMode()) app = (await listApps(access)).find((a) => a.id === id);
+  else {
+    const c = await client(access);
+    if (await demoMode()) {
+      const config = await settings();
+      if (!config.PLATFORM_INTERNAL_KEY) throw new Error("PLATFORM_INTERNAL_KEY is missing");
+      app = await c.action(api.platform.getDemo, {
+        appId: id,
+        serverKey: config.PLATFORM_INTERNAL_KEY,
+      });
+    } else app = await c.query(api.platform.get, { appId: id });
+  }
   if (!app) throw new Error("Application not found or access denied");
   return app;
 }
 export async function saveApp(access: Access, app: Application, expectedRevision: number | null) {
   if (app.ownerId !== access.ownerId) throw new Error("Account ownership mismatch");
-  if (JSON.stringify(app).length > 700000)
+  const { conversation: _conversation, ...applicationData } = app;
+  if (JSON.stringify(applicationData).length > 700000)
     throw new Error("Application exceeds prototype storage limit");
   if (await localMode())
     return localStore((apps) => {

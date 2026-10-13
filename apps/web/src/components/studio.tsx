@@ -1,7 +1,10 @@
 import { AgentChat } from "./agent-chat";
 import { ConversationNavigation } from "./conversation-navigation";
 import { PluginSettings } from "./plugin-settings";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "@tanstack/react-router";
+import type { UIMessage } from "@tanstack/ai-react";
+import { StudioSubscriptions } from "../lib/use-studio-data";
 import {
   ArrowUpRight,
   Eye,
@@ -82,7 +85,22 @@ const workspaceTabs = [
   { value: "data", label: "Database (read-only)", Icon: Database },
 ] as const;
 export function Studio() {
+  const convexConfigured = !!useRouter().options.context.convexClient;
+  const [subscribedThreads, setSubscribedThreads] =
+    useState<Pick<Application, "id" | "name" | "chatTitle">[]>();
+  const [subscribedApp, setSubscribedApp] = useState<{ appId: string; app: Application | null }>();
+  const receiveApp = useCallback((appId: string, app: Application | null) => {
+    setSubscribedApp({ appId, app });
+  }, []);
+  const [subscribedMessages, setSubscribedMessages] = useState<{
+    appId: string;
+    messages: UIMessage[];
+  }>();
+  const receiveMessages = useCallback((appId: string, messages: UIMessage[]) => {
+    setSubscribedMessages({ appId, messages });
+  }, []);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const reactive = convexConfigured && snapshot?.status.local !== true;
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -111,11 +129,27 @@ export function Studio() {
       setError("Fullscreen could not open.");
     }
   }
-  const app = snapshot?.apps.find((a) => a.id === selected) ?? null;
+  const apps = subscribedThreads ?? snapshot?.apps ?? [];
+  const fallbackApp = snapshot?.apps.find((a) => a.id === selected) ?? null;
+  const selectedApp =
+    reactive && subscribedApp?.appId === selected
+      ? (subscribedApp.app ?? fallbackApp)
+      : fallbackApp;
+  const messagesReady =
+    !reactive || !selected || (!!selectedApp && subscribedMessages?.appId === selected);
+  const app =
+    selectedApp && reactive
+      ? {
+          ...selectedApp,
+          conversation:
+            subscribedMessages?.appId === selected ? subscribedMessages.messages : undefined,
+        }
+      : selectedApp;
   const release = app && (app.current ?? app.preview);
   const workspaceBundle = app?.workspace ?? release?.bundle;
   const refreshVersion = useRef(0);
   async function refresh() {
+    if (reactive && snapshot) return snapshot;
     const version = ++refreshVersion.current;
     const data = await api<Snapshot>();
     if (version === refreshVersion.current) setSnapshot(data);
@@ -123,7 +157,7 @@ export function Studio() {
   }
   useEffect(() => {
     let mounted = true;
-    api<Snapshot>()
+    api<Snapshot>(undefined, { summary: reactive })
       .then((data) => {
         if (!mounted) return;
         setSnapshot(data);
@@ -139,7 +173,7 @@ export function Studio() {
     };
   }, []);
   useEffect(() => {
-    if (!app || app.chatTitle !== "New chat") return;
+    if (reactive || !app || app.chatTitle !== "New chat") return;
     let stopped = false;
     let attempts = 0;
     const timer = setInterval(() => {
@@ -155,7 +189,7 @@ export function Studio() {
       stopped = true;
       clearInterval(timer);
     };
-  }, [app?.id, app?.chatTitle]);
+  }, [reactive, app?.id, app?.chatTitle]);
   function select(id: string | null) {
     setSelected(id);
     setImported(null);
@@ -229,8 +263,17 @@ export function Studio() {
       className="h-svh min-h-0 overflow-hidden"
       style={{ "--sidebar-width": "16rem" } as React.CSSProperties}
     >
+      {reactive && snapshot && (
+        <StudioSubscriptions
+          selected={selected}
+          demo={snapshot.status.demo}
+          onThreads={setSubscribedThreads}
+          onApp={receiveApp}
+          onMessages={receiveMessages}
+        />
+      )}
       <ConversationNavigation
-        apps={snapshot?.apps ?? []}
+        apps={apps}
         selected={selected}
         select={select}
         busy={!!busy || agentBusy}
@@ -307,8 +350,14 @@ export function Studio() {
             <AgentChat
               key={chatKey}
               app={app}
+              reactive={reactive}
+              messagesReady={messagesReady}
               connected={!!snapshot?.status.modelConfigured}
-              disabled={!!busy}
+              disabled={
+                !!busy ||
+                !messagesReady ||
+                (reactive && app?.agentTurn?.status === "running" && !agentBusy)
+              }
               modelName={snapshot?.status.model ?? "AI"}
               onBusyChange={setAgentBusy}
               onImport={() => file.current?.click()}
