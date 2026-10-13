@@ -2,7 +2,12 @@ import { chat } from "@tanstack/ai";
 import { openaiCompatibleText } from "@tanstack/ai-openai/compatible";
 import { z } from "zod";
 import { modelConfiguration } from "./model-config";
-import { bundleSchema, specSchema, type ProductSpec, type Release } from "../lib/contracts";
+import {
+  legacyBundleSchema as bundleSchema,
+  specSchema,
+  type ProductSpec,
+  type Release,
+} from "../lib/contracts";
 import { protocolInstructions } from "../lib/samples";
 import { settings } from "./settings";
 

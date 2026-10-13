@@ -74,7 +74,7 @@ export const specSchema = z
   })
   .strict();
 export type ProductSpec = z.infer<typeof specSchema>;
-export const bundleSchema = z
+export const legacyBundleSchema = z
   .object({
     manifest: z
       .object({
@@ -94,6 +94,42 @@ export const bundleSchema = z
       .strict(),
   })
   .strict();
+const sourceFilesSchema = legacyBundleSchema.shape.files.catchall(z.string().max(60000));
+export const bundleSchema = z
+  .object({
+    manifest: legacyBundleSchema.shape.manifest.extend({
+      schemaVersion: z.union([z.literal(1), z.literal(2)]),
+    }),
+    files: sourceFilesSchema,
+  })
+  .strict()
+  .superRefine((bundle, ctx) => {
+    const legacy = new Set(["index.html", "app.js", "calculations.js", "style.css"]);
+    const paths = Object.keys(bundle.files);
+    for (const path of paths) {
+      if (legacy.has(path)) continue;
+      if (
+        bundle.manifest.schemaVersion === 1 ||
+        !/^src\/(?:App\.tsx|components\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.tsx?)$/.test(path)
+      )
+        ctx.addIssue({ code: "custom", path: ["files", path], message: "Unsupported source path" });
+    }
+    if (bundle.manifest.schemaVersion === 2 && !bundle.files["src/App.tsx"]?.trim())
+      ctx.addIssue({
+        code: "custom",
+        path: ["files", "src/App.tsx"],
+        message: "React apps require src/App.tsx",
+      });
+    if (
+      paths.length > 44 ||
+      Object.values(bundle.files).reduce((size, content) => size + content.length, 0) > 200000
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["files"],
+        message: "Source bundle exceeds 44 files or 200 KB",
+      });
+  });
 export type AppBundle = z.infer<typeof bundleSchema>;
 export type Check = { name: string; passed: boolean; detail: string };
 export type Verification = {

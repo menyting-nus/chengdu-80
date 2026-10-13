@@ -177,7 +177,7 @@ try {
   pass("Cross-origin writes and unsupported execution requests are rejected");
   const docs = await fetch(`http://127.0.0.1:${port}/api/docs`);
   assert.ok(docs.ok);
-  assert.equal(((await docs.json()) as { version: number }).version, 1);
+  assert.equal(((await docs.json()) as { version: number }).version, 2);
   pass("Public source contract and protocol documentation are available");
   console.log(`${passed} release-lifecycle integration checks passed.`);
 } finally {

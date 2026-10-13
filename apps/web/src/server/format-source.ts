@@ -6,7 +6,10 @@ import { z } from "zod";
 export const formatSource = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
-      fileName: z.enum(["app.js", "calculations.js", "index.html", "style.css", "cd80.json"]),
+      fileName: z
+        .string()
+        .max(200)
+        .regex(/^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.(?:tsx?|js|html|css|json)$/),
       content: z.string().max(250000),
     }),
   )

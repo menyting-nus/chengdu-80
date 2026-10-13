@@ -144,7 +144,7 @@ const persisted = refreshed.apps.find((row: any) => row.id === app.id);
 assert.equal(persisted.current.id, app.current.id);
 assert.deepEqual(persisted.data.inputs, inputs);
 const docs = await fetch(new URL("/api/docs", base));
-assert.equal(((await docs.json()) as { version: number }).version, 1);
+assert.equal(((await docs.json()) as { version: number }).version, 2);
 pass("Release and inputs survive a new hosted request; public contract docs are available");
 mkdirSync(resolve(platformRoot, ".local"), { recursive: true });
 writeFileSync(

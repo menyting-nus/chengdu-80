@@ -45,6 +45,13 @@ COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/apps/web/node_modules ./apps/web/node_modules
 COPY --from=build /repo/apps/web/dist ./apps/web/dist
 COPY --from=build /repo/apps/web/server ./apps/web/server
+COPY --from=build /repo/apps/web/starter ./apps/web/starter
+COPY --from=build /repo/apps/web/src/lib/generated-app ./apps/web/src/lib/generated-app
+COPY --from=build /repo/apps/web/src/lib/contracts.ts ./apps/web/src/lib/contracts.ts
+COPY --from=build /repo/packages/ui/src ./packages/ui/src
+COPY --from=build /repo/packages/ui/node_modules ./packages/ui/node_modules
+COPY --from=build /repo/packages/ui/package.json ./packages/ui/package.json
+COPY --from=build /repo/bun.lock ./bun.lock
 COPY --from=build /repo/apps/web/package.json ./apps/web/package.json
 EXPOSE 3001
 WORKDIR /app/apps/web

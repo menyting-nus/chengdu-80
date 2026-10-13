@@ -10,12 +10,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { callPlugin } from "../apps/web/src/server/plugins";
 import type { RegisteredPlugin } from "../apps/web/src/lib/plugins";
+import { protocols, type Application } from "../apps/web/src/lib/contracts";
+import { sampleBundle } from "../apps/web/src/lib/samples";
+import { saveApp } from "../apps/web/src/server/repository";
 
 const base = "http://127.0.0.1:3006";
 const dataDir = await mkdtemp(join(tmpdir(), "cd80-plugins-"));
 const credential = "plugin-test-secret";
 const results: string[] = [];
 let observedCredential = "";
+let weatherWrites = 0;
 let server: ChildProcess | undefined;
 let log = "";
 const fixture = createServer((request, response) => {
@@ -27,6 +31,7 @@ const fixture = createServer((request, response) => {
     response.setHeader("location", "http://127.0.0.1:9/private");
     response.end();
   } else if (url.pathname === "/weather") {
+    if (request.method === "POST") weatherWrites++;
     const key = request.headers["x-api-key"];
     observedCredential = typeof key === "string" ? key : "";
     response.end(
@@ -53,6 +58,10 @@ const document = {
     "/weather": {
       get: {
         operationId: "getWeather",
+        parameters: [{ name: "city", in: "query", required: true, schema: { type: "string" } }],
+      },
+      post: {
+        operationId: "updateWeather",
         parameters: [{ name: "city", in: "query", required: true, schema: { type: "string" } }],
       },
     },
@@ -135,6 +144,51 @@ try {
   assert.deepEqual(weather, { city: "London", temperature: 21, echo: "[redacted]" });
   results.push(
     "Registered operation fetches provider data with server credentials and redacts echoed secrets",
+  );
+
+  const spec = protocols[0]!.defaultSpec;
+  const bundle = sampleBundle(spec);
+  bundle.manifest.permissions.push("plugin.call");
+  const imported = await fetch(base + "/api/platform", {
+    method: "POST",
+    headers: { origin: base, "content-type": "application/json" },
+    body: JSON.stringify({ action: "import", bundle, spec }),
+  });
+  assert.equal(imported.status, 200, await imported.clone().text());
+  const app = (await imported.json()) as Application;
+  assert(app.current?.verification.passed);
+  app.enabledPlugins = [plugin.id];
+  await saveApp(access, app, app.revision);
+  async function pluginRpc(operationId: string, readOnly?: boolean) {
+    return fetch(base + "/api/platform", {
+      method: "POST",
+      headers: { origin: base, "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "rpc",
+        appId: app.id,
+        releaseId: app.current!.id,
+        capability: "plugin.call",
+        input: { pluginId: plugin.id, operationId, parameters: { city: "London" }, readOnly },
+      }),
+    });
+  }
+  const deniedWrite = await pluginRpc("updateWeather", true);
+  assert.equal(deniedWrite.status, 400);
+  assert.match(await deniedWrite.text(), /queries require a GET or HEAD/);
+  assert.equal(weatherWrites, 0, "Read-only queries must not reach a write operation");
+  const explicitWrite = await pluginRpc("updateWeather");
+  assert.equal(explicitWrite.status, 200, await explicitWrite.clone().text());
+  assert.equal(weatherWrites, 1);
+  const readOnlyGet = await pluginRpc("getWeather", true);
+  assert.equal(readOnlyGet.status, 200, await readOnlyGet.clone().text());
+  assert.deepEqual(await readOnlyGet.json(), {
+    city: "London",
+    temperature: 21,
+    echo: "[redacted]",
+  });
+  assert.equal(weatherWrites, 1);
+  results.push(
+    "HTTP read-only plugin queries reject POST before provider dispatch; explicit POST and read-only GET work",
   );
 
   await assert.rejects(callPlugin(access, plugin.id, "getWeather", {}), /Missing plugin parameter/);

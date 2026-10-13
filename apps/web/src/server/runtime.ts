@@ -1,4 +1,5 @@
 import { parse } from "acorn";
+import { compileTsx, inspectTsxSource } from "./tsx-compiler";
 import {
   protocolFor,
   type AppBundle,
@@ -100,6 +101,7 @@ export function inspectSource(bundle: AppBundle, spec: ProductSpec): Check[] {
       add(`${file} syntax`, false, e instanceof Error ? e.message : "Invalid source");
     }
   }
+  if (bundle.manifest.schemaVersion === 2) checks.push(...inspectTsxSource(bundle));
   return checks;
 }
 export async function execute(bundle: AppBundle, input: unknown) {
@@ -195,6 +197,24 @@ function matches(result: any, expected: Record<string, unknown>) {
 }
 export async function verify(bundle: AppBundle, spec: ProductSpec): Promise<Verification> {
   const checks = inspectSource(bundle, spec);
+  if (bundle.manifest.schemaVersion === 2 && checks.every((check) => check.passed)) {
+    try {
+      await compileTsx(bundle);
+      checks.push({
+        name: "React typecheck and browser build",
+        passed: true,
+        detail:
+          "Strict TypeScript checking and the fixed React/shadcn browser build succeeded. This checks compilation; browser rendering is verified separately.",
+      });
+    } catch (error) {
+      checks.push({
+        name: "React typecheck and browser build",
+        passed: false,
+        detail:
+          error instanceof Error ? error.message.slice(0, 12_000) : "React starter build failed",
+      });
+    }
+  }
   if (checks.every((c) => c.passed)) {
     const p = protocolFor(spec.protocol);
     try {

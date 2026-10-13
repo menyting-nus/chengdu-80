@@ -2,7 +2,7 @@
 
 A financial application studio using the selected [web-starter](https://github.com/adityamiskin/web-starter): Bun, TanStack Start, React, Tailwind 4, shadcn, Convex, WorkOS, TanStack AI, deployed as a self-hosted Node server (Docker/docker-compose). Previously deployed to Cloudflare through Alchemy 2; see "Historical Cloudflare deployment" below.
 
-The prototype is deployed at [Chengdu80 studio](https://chengdu80-web-live-ananthacharya-mb7epyiddt4jehqm.chengdu80-1610dcd1.workers.dev). It supports specification review, financial examples, source-code import, isolated calculations, shared app data, and reviewed updates. Login is deferred: all visitors share the same demo workspace. The labelled example builder does not generate arbitrary custom changes.
+The studio builds and updates apps through conversation. The AI edits actual source files with TanStack AI tools, verifies the changes and activates passing releases automatically. Login is deferred in demo mode: visitors share the same workspace.
 
 ## Run locally
 
@@ -34,22 +34,25 @@ For Node 24+ using an HTTP proxy, set `NODE_USE_ENV_PROXY=1`, `HTTPS_PROXY`, `HT
 
 ## Try the product
 
-1. Enter an English financial question, prepare its specification, and edit the scope before confirming.
-2. Build with the model or labelled example builder. Review the app and Checks tab; accept the release.
-3. Edit shared inputs from the accepted app. Preview storage is read-only.
-4. Request a change. The accepted release keeps running while its update is checked. Accepting retains shared data.
-5. Import a compatible bundle from `examples/` or another coding tool. Choose New application for a separate app; import while an app is selected for an update.
-6. For an accepted Strategy app, open Connections and load real daily prices. Local mode uses the narrow Alpha Vantage public demo for `600104.SHH`; hosted mode uses configured Tushare. Source, dates and limits accompany the data.
+1. Start a new chat and describe the app. The thread and prompt are saved in Convex.
+2. The agent edits source, runs checks and activates passing changes automatically.
+3. Use Preview to interact with the app, or Code to inspect its read-only source tree.
+4. Request changes in the same conversation. Failed updates retain the working release and shared data.
+5. Register an OpenAPI plugin in Connections. The agent can discover and enable it, and generated apps use the permission-checked SDK to call its operations.
 
 Portfolio, screening and strategy protocols are provisional feasibility examples. Final application categories remain open. Additional compatible apps can be imported and run.
 
 ## Source and runtime
 
-Public docs: `/docs` and `/api/docs`. A bundle contains a manifest and exactly `index.html`, `app.js`, `calculations.js`, `style.css`; alternatively select these files plus `cd80.json` together. Limit: 250 KB. Arbitrary server frameworks, package installation and remote resources are outside this prototype's import format.
+Public docs: `/docs` and `/api/docs`. New apps use source format 2: a manifest, the fixed React entry placeholders, `calculations.js`, `style.css`, `src/App.tsx` and optional nested `src/components/*.tsx` or `.ts` files. The AI writes real TypeScript/JSX rather than a composition-only configuration. The platform supplies React, Tailwind v4, shadcn Nova, TanStack Query, Zod, Lucide icons, the typed `@cd80/sdk` and reusable `@cd80/components`. It supplies the React root and QueryClientProvider too.
+
+A fixed worker run by Bun typechecks and bundles these sources with the existing Vite toolchain before activation. It parses browser source without importing or running generated code on the server. The worker receives a scrubbed environment, approved imports and a fixed build configuration; arbitrary packages, macros, dynamic imports and compiler directives are rejected. Builds run serially with a 60-second deadline. This is a bounded compiler subprocess, not an OS sandbox or a separate container per app.
+
+Source and data stay in Convex. Compiled JS/CSS are cached on Node and served through an ownership-checked asset endpoint; they are rebuilt from verified source after restart. Existing format-1 apps retain their four plain JavaScript/HTML/CSS files and work unchanged. JSON bundle uploads support both formats, up to 250 KB; format 2 permits at most 44 source files and 200 KB of source.
 
 Browser apps run in opaque-origin iframes with restrictive CSP and a permission-checked `cd80.call()` bridge. `calculations.js` exports `analyze(input)` and always runs in a separate Miniflare/workerd isolate (no Cloudflare account required), without secrets or network access. CPU is capped and a 3-second disposal timeout applies. App sources, releases and shared data are in Convex.
 
-Releases require syntax, contract, permission, credential-pattern, numerical fixture, boundary, and applicable invalid-input checks. SHA-256 binds checks to exact source. Passing establishes the tested protocol contract, not certification of every additional calculation or the full specification. Review custom logic and rendered previews.
+Releases require syntax, contract, permission, credential-pattern, numerical fixture, boundary, and applicable invalid-input checks. React releases also require strict TypeScript checking and compilation. Browser smoke tests separately verify actual React rendering, SDK calls, shadcn styling and iframe networking restrictions; compilation alone does not certify rendered behavior. SHA-256 binds checks to exact source. Passing establishes the tested protocol contract, not certification of every additional calculation or the full specification. Review custom logic and rendered previews.
 
 Nine capabilities cover normalized market data, reusable financial functions, custom calculations, shared storage and managed AI. New providers require adapters. `_provenance` is reserved; edited inputs are labelled user-entered. AI explanations use server-recomputed saved inputs.
 
@@ -58,6 +61,7 @@ Nine capabilities cover normalized market data, reusable financial functions, cu
 With the local Convex-backed dev server running and an existing generated conversation, `bun run test:convex` checks normalized storage, migration, access checks, direct mutations, reactive messages across two Chrome tabs, transport failure recovery and thread deletion. It also verifies that client-bound SSE text cannot override the Convex transcript. It makes one live model call and writes screenshots/results to `.local/convex-tests/`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when using an existing Chrome installation.
 
 ```bash
+bun scripts/test-tsx.ts      # React/shadcn browser E2E; build first with VITE_LOCAL_MODE=1
 bun run test:prototype       # 12 financial, sandbox, hash and persistence checks
 bun run test:flow            # 13 HTTP lifecycle checks on temporary data
 bun run test:model-contract  # 3 mock Responses transport checks, not live inference

@@ -10,6 +10,7 @@ import {
   type Release,
 } from "../lib/contracts";
 import { calculate, defaultData, fixtureMeta } from "../lib/finance";
+import { tsxStarter } from "../lib/tsx-starter";
 import { sampleBundle } from "../lib/samples";
 import { auth } from "../integrations/auth";
 import { clarify, explain, feasibility, generate } from "./models";
@@ -176,10 +177,7 @@ export async function dispatch(access: Access, raw: unknown) {
     });
     app.chatTitle = "New chat";
     app.conversation = [];
-    const scaffold = sampleBundle(app.spec);
-    scaffold.files["index.html"] = '<main id="app"></main>';
-    scaffold.files["app.js"] = "cd80.ready();";
-    scaffold.files["style.css"] = "";
+    const scaffold = tsxStarter(app.spec);
     app.workspace = scaffold;
     const saved = await saveApp(access, app, null);
     const { generateChatTitle } = await import("./chat-title");
@@ -362,6 +360,7 @@ export async function dispatch(access: Access, raw: unknown) {
         pluginId: z.string(),
         operationId: z.string(),
         parameters: z.record(z.string(), z.unknown()).default({}),
+        readOnly: z.boolean().optional(),
       })
       .parse(req.input);
     if (!app.enabledPlugins?.includes(input.pluginId))
@@ -371,6 +370,7 @@ export async function dispatch(access: Access, raw: unknown) {
       input.pluginId,
       input.operationId,
       input.parameters,
+      input.readOnly,
     );
   }
   if (req.capability === "finance.calculate") return execute(release.bundle, req.input);

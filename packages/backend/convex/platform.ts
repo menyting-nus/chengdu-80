@@ -11,7 +11,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { protocols, type Application } from "../../../apps/web/src/lib/contracts";
-import { sampleBundle } from "../../../apps/web/src/lib/samples";
+import { tsxStarter } from "../../../apps/web/src/lib/tsx-starter";
 import { defaultData, fixtureMeta } from "../../../apps/web/src/lib/finance";
 
 type Messages = NonNullable<Application["conversation"]>;
@@ -152,10 +152,7 @@ export const createWorkspace = mutation({
       name: "New chat",
       purpose: text.length >= 10 ? text.slice(0, 4000) : `Conversation: ${text}`,
     };
-    const workspace = sampleBundle(spec);
-    workspace.files["index.html"] = '<main id="app"></main>';
-    workspace.files["app.js"] = "cd80.ready();";
-    workspace.files["style.css"] = "";
+    const workspace = tsxStarter(spec);
     const app: Application = {
       id: appId,
       ownerId,

@@ -7,6 +7,8 @@ export function AppFrame({ app, release }: { app: Application; release: Release 
   const frame = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
+  const [assets, setAssets] = useState<{ releaseId: string; javascript: string; css: string }>();
+  const isReact = release.bundle.manifest.schemaVersion === 2;
   const nonce = useMemo(() => crypto.randomUUID().replaceAll("-", ""), [release.id]);
   const onFrameLoad = useMemo(() => {
     let loads = 0;
@@ -102,11 +104,43 @@ export function AppFrame({ app, release }: { app: Application; release: Release 
       clearTimeout(timer);
     };
   }, [app.id, release.id, nonce]);
+  useEffect(() => {
+    if (!isReact) return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({ appId: app.id, releaseId: release.id });
+    void fetch(`/api/app-assets?${query}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error("Compiled preview could not load. Try refreshing the preview.");
+        const result: unknown = await response.json();
+        if (
+          !result ||
+          typeof result !== "object" ||
+          !("javascript" in result) ||
+          !("css" in result) ||
+          typeof result.javascript !== "string" ||
+          typeof result.css !== "string"
+        ) {
+          throw new Error("Invalid compiled preview assets");
+        }
+        if (!controller.signal.aborted)
+          setAssets({ releaseId: release.id, javascript: result.javascript, css: result.css });
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted)
+          setError(reason instanceof Error ? reason.message : "Compiled preview could not load");
+      });
+    return () => controller.abort();
+  }, [app.id, release.id, isReact]);
   const doc = useMemo(() => {
+    const compiled = assets?.releaseId === release.id ? assets : undefined;
+    if (isReact && !compiled) return undefined;
     const sdk = `const report=message=>parent.postMessage({channel:'cd80',nonce:'${nonce}',log:{message:String(message)}},'*');window.addEventListener('error',e=>report(e.message));window.addEventListener('unhandledrejection',e=>report(e.reason instanceof Error?e.reason.message:e.reason));const pending=new Map();let count=0;window.cd80={call(capability,input={}){return new Promise((resolve,reject)=>{const id=String(++count);const timer=setTimeout(()=>{pending.delete(id);reject(new Error('Capability request timed out'));},100000);pending.set(id,{resolve,reject,timer});parent.postMessage({channel:'cd80',nonce:'${nonce}',id,capability,input},'*');});},ready(){parent.postMessage({channel:'cd80',nonce:'${nonce}',ready:true},'*');}};window.addEventListener('message',e=>{const m=e.data;if(e.source!==parent||!m||m.channel!=='cd80-result'||m.nonce!=='${nonce}')return;const p=pending.get(m.id);if(!p)return;clearTimeout(p.timer);pending.delete(m.id);m.error?p.reject(new Error(m.error)):p.resolve(m.result);});`;
     const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none';`;
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,textarea{scrollbar-gutter:stable}${release.bundle.files["style.css"].replace(/<\/style/gi, "<\\/style")}</style></head><body>${release.bundle.files["index.html"]}<script nonce="${nonce}">${sdk}</script><script nonce="${nonce}" type="module">${release.bundle.files["app.js"].replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
-  }, [nonce, release.bundle]);
+    const javascript = compiled ? compiled.javascript : release.bundle.files["app.js"];
+    const css = compiled ? compiled.css : release.bundle.files["style.css"];
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,textarea{scrollbar-gutter:stable}${css.replace(/<\/style/gi, "<\\/style")}</style></head><body>${release.bundle.files["index.html"]}<script nonce="${nonce}">${sdk}</script><script nonce="${nonce}" ${isReact ? "" : 'type="module"'}>${javascript.replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
+  }, [nonce, release.bundle, release.id, isReact, assets]);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {!ready && !error && (
@@ -120,17 +154,19 @@ export function AppFrame({ app, release }: { app: Application; release: Release 
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <iframe
-        ref={frame}
-        onLoad={onFrameLoad}
-        key={release.id}
-        title={`${app.name} application`}
-        aria-busy={!ready}
-        srcDoc={doc}
-        sandbox="allow-scripts"
-        referrerPolicy="no-referrer"
-        className="min-h-0 w-full flex-1 border-0"
-      />
+      {doc && (
+        <iframe
+          ref={frame}
+          onLoad={onFrameLoad}
+          key={release.id}
+          title={`${app.name} application`}
+          aria-busy={!ready}
+          srcDoc={doc}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          className="min-h-0 w-full flex-1 border-0"
+        />
+      )}
     </div>
   );
 }

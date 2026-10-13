@@ -43,7 +43,7 @@ export function OverviewContent() {
         Getting started
       </Heading>
       <ol>
-        <li>Review and confirm a product specification.</li>
+        <li>Describe the app in a new conversation.</li>
         <li>Build an example, generate source with the model, or import a compatible bundle.</li>
         <li>Verification runs automatically before the app becomes active.</li>
         <li>Continue the conversation to change the app.</li>
@@ -79,10 +79,10 @@ export function SourceContent() {
   return (
     <>
       <p>
-        Upload one JSON source bundle with <code>manifest</code> and <code>files</code>, or select
-        the five files below together. The first prototype supports self-contained browser
-        applications and a pure JavaScript calculation module. It does not install packages or run
-        arbitrary server frameworks.
+        Upload a JSON bundle with <code>manifest</code> and <code>files</code>. Version 2 supports
+        React and TypeScript with the supplied shadcn Nova starter. Version 1 remains compatible
+        with existing plain JavaScript apps. The platform supplies pinned dependencies and build
+        configuration; apps cannot install packages or run arbitrary server frameworks.
       </p>
       <Table>
         <TableHeader>
@@ -93,6 +93,19 @@ export function SourceContent() {
         </TableHeader>
         <TableBody>
           <TableRow>
+            <TableCell className="whitespace-normal">src/App.tsx</TableCell>
+            <TableCell className="whitespace-normal">
+              Version 2 React entry component, exported as default. Compose supplied shadcn
+              components and platform capabilities in ordinary TSX.
+            </TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell className="whitespace-normal">src/components/**/*.tsx or .ts</TableCell>
+            <TableCell className="whitespace-normal">
+              Optional app-specific components and helpers. Relative source imports are supported.
+            </TableCell>
+          </TableRow>
+          <TableRow>
             <TableCell className="whitespace-normal">cd80.json</TableCell>
             <TableCell className="whitespace-normal">
               Manifest with schemaVersion, name, protocol, permissions
@@ -101,14 +114,15 @@ export function SourceContent() {
           <TableRow>
             <TableCell className="whitespace-normal">index.html</TableCell>
             <TableCell className="whitespace-normal">
-              Body fragment. No scripts, executable handlers, forms, embedded frames, or external
-              resources.
+              Safe body fragment. Version 2 supplies the React root. No scripts, executable HTML
+              handlers, embedded frames or external resources.
             </TableCell>
           </TableRow>
           <TableRow>
             <TableCell className="whitespace-normal">app.js</TableCell>
             <TableCell className="whitespace-normal">
-              Browser JavaScript. May use top-level await. No module imports or remote scripts.
+              Version 1 browser JavaScript, with top-level await but no imports. Version 2 retains
+              this compatibility file and executes the compiled React entry instead.
             </TableCell>
           </TableRow>
           <TableRow>
@@ -120,7 +134,8 @@ export function SourceContent() {
           <TableRow>
             <TableCell className="whitespace-normal">style.css</TableCell>
             <TableCell className="whitespace-normal">
-              App styling. Fonts and other external resources are unavailable.
+              Additional app styling. Version 2 includes generated Tailwind utilities and the
+              supplied Nova theme. External resources remain unavailable.
             </TableCell>
           </TableRow>
         </TableBody>
@@ -130,7 +145,7 @@ export function SourceContent() {
           <code>
             {JSON.stringify(
               {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 name: "My portfolio app",
                 protocol: "portfolio",
                 permissions: [
@@ -148,9 +163,13 @@ export function SourceContent() {
         </Pre>
       </CodeBlock>
       <p>
-        The upload limit is 250 KB. Imported updates must retain the app's existing protocol. Import
-        source while an app is selected to apply an update; choose New application first to create a
-        separate app.
+        Version 2 imports React, stock shadcn primitives from <code>@/components/ui/*</code>,
+        reusable capability components from <code>@cd80/components</code>, and typed platform
+        capabilities from <code>@cd80/sdk</code>. Build dependencies and the entry point are
+        platform-owned, not editable package configuration. Bundles are limited to 44 source files
+        and 200 KB of source; the upload limit is 250 KB. Imported updates must retain the app's
+        existing protocol. Import source while an app is selected to apply an update; choose New
+        chat first to create a separate app.
       </p>
     </>
   );
@@ -173,6 +192,13 @@ cd80.ready();
 await cd80.call("storage.write", { key: "inputs", value: inputs });`}</code>
         </Pre>
       </CodeBlock>
+      <p>
+        React apps import <code>cd80</code> from <code>@cd80/sdk</code> for the same capabilities
+        with typed requests. Import UI primitives from <code>@/components/ui/*</code>; they are real
+        shadcn components bundled with React. <code>@cd80/components</code> supplies MetricCard,
+        DataTable, PluginPanel and AIExplanationPanel. The fixed shell mounts the default export
+        from <code>src/App.tsx</code> and reports readiness.
+      </p>
       <p>
         Calls return a Promise and reject on missing permissions, invalid data, or unavailable
         services. Call <code>cd80.ready()</code> after rendering. Use DOM textContent or escape user
@@ -267,11 +293,14 @@ export function VerificationContent() {
   return (
     <>
       <p>
-        Every build and source import checks its manifest, source syntax, required permissions,
-        potential embedded credentials, HTML isolation, exported calculation function, protocol
-        numerical fixture, boundary values, and invalid inputs. Calculation checks execute in
-        Miniflare/workerd in local and self-hosted modes, without provider secrets or outbound
-        network.
+        Version 2 first type-checks and bundles TSX against the fixed React/shadcn starter in a
+        bounded build worker. Only approved imports and workspace source paths can resolve. The
+        compiled browser bundle runs under the same opaque iframe, CSP and capability bridge as
+        version 1, without direct networking or credentials. Every build and source import checks
+        its manifest, source syntax, required permissions, potential embedded credentials, HTML
+        isolation, exported calculation function, protocol numerical fixture, boundary values, and
+        invalid inputs. Calculation checks execute in Miniflare/workerd in local and self-hosted
+        modes, without provider secrets or outbound network.
       </p>
       <p>
         These tests validate the published protocol contract. They do not certify every additional
@@ -315,10 +344,11 @@ export function ConversationContent() {
         leave the working site and data intact.
       </p>
       <p>
-        The workspace contains five self-contained browser-app files. The shell is isolated from
-        host files, secrets and networking, and is not a Node package-install environment.
-        Deployment runs the existing protocol and source checks before automatically activating the
-        site.
+        New workspaces use the React/TSX starter with editable app components and supplied shadcn
+        primitives. Existing version 1 apps keep their plain JavaScript source contract. The shell
+        is isolated from host files, secrets and networking, and is not a package-install
+        environment. Deployment type-checks version 2 source, builds the fixed starter and runs
+        protocol and isolation checks before automatically activating the site.
       </p>
     </>
   );

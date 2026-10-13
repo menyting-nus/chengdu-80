@@ -147,6 +147,16 @@ export function Studio() {
       : selectedApp;
   const release = app && (app.current ?? app.preview);
   const workspaceBundle = app?.workspace ?? release?.bundle;
+  const defaultSourceFile =
+    workspaceBundle?.manifest.schemaVersion === 2 ? "src/App.tsx" : "app.js";
+  useEffect(() => {
+    setActiveSourceFile(defaultSourceFile);
+  }, [app?.id, defaultSourceFile]);
+  const displaySourceFile =
+    activeSourceFile === "cd80.json" ||
+    (workspaceBundle && Object.hasOwn(workspaceBundle.files, activeSourceFile))
+      ? activeSourceFile
+      : defaultSourceFile;
   const refreshVersion = useRef(0);
   async function refresh() {
     if (reactive && snapshot) return snapshot;
@@ -480,9 +490,9 @@ export function Studio() {
                   <div className="flex min-w-0 items-center justify-center gap-2">
                     <span
                       className="truncate text-sm font-mono"
-                      title={tab === "source" ? activeSourceFile : app.name}
+                      title={tab === "source" ? displaySourceFile : app.name}
                     >
-                      {tab === "source" ? activeSourceFile : app.name}
+                      {tab === "source" ? displaySourceFile : app.name}
                     </span>
                     {tab !== "source" && (
                       <Button
@@ -562,7 +572,7 @@ export function Studio() {
                     <CodeWorkspace
                       bundle={workspaceBundle}
                       workspaceId={`${app.id}:${app.revision}`}
-                      activeFile={activeSourceFile}
+                      activeFile={displaySourceFile}
                       onSelectFile={setActiveSourceFile}
                     />
                   )}

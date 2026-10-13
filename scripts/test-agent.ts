@@ -63,19 +63,12 @@ const fixture = createServer(async (req, res) => {
         {
           name: "write_file",
           arguments: {
-            path: "index.html",
-            content: '<main><h1 id="title">Copper Finch</h1><p id="note"></p></main>',
+            path: "src/App.tsx",
+            content: `import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+export default function App() { return <Card><CardHeader><CardTitle>Copper Finch</CardTitle></CardHeader><CardContent>Built by real agent tools</CardContent></Card>; }`,
           },
         },
-        {
-          name: "write_file",
-          arguments: {
-            path: "app.js",
-            content:
-              'document.getElementById("note").textContent="Built by real agent tools"; cd80.ready();',
-          },
-        },
-        { name: "bash", arguments: { command: "echo fixture-shell; cat index.html" } },
+        { name: "bash", arguments: { command: "echo fixture-shell; cat src/App.tsx" } },
         {
           name: "deploy_preview",
           arguments: { summary: "Built Copper Finch through workspace tools" },
@@ -110,15 +103,17 @@ const fixture = createServer(async (req, res) => {
         {
           name: "write_file",
           arguments: {
-            path: "index.html",
-            content: '<main><h1>London weather</h1><p id="weather"></p></main>',
-          },
-        },
-        {
-          name: "write_file",
-          arguments: {
-            path: "app.js",
-            content: `const weather = await cd80.call('plugin.call', {pluginId: '${registeredPluginId}', operationId: 'getWeather', parameters: {city: 'London'}}); document.getElementById('weather').textContent = weather.temperature + '°C in ' + weather.city; cd80.ready();`,
+            path: "src/App.tsx",
+            content: `import { useEffect, useState } from 'react';
+import { z } from 'zod';
+import { cd80 } from '@cd80/sdk';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+const weatherSchema = z.object({temperature: z.number(), city: z.string()});
+export default function App() {
+ const [weather, setWeather] = useState<z.infer<typeof weatherSchema> | null>(null);
+ useEffect(() => { void cd80.plugins.callParsed({pluginId: '${registeredPluginId}', operationId: 'getWeather', parameters: {city: 'London'}}, weatherSchema).then(setWeather); }, []);
+ return <Card><CardHeader><CardTitle>London weather</CardTitle></CardHeader><CardContent>{weather ? weather.temperature + '°C in ' + weather.city : 'Loading weather'}</CardContent></Card>;
+}`,
           },
         },
         {
@@ -132,8 +127,9 @@ const fixture = createServer(async (req, res) => {
         {
           name: "write_file",
           arguments: {
-            path: "index.html",
-            content: '<main><script>alert("forbidden")</script></main>',
+            path: "src/App.tsx",
+            content:
+              'export default function App() { const broken: number = "invalid"; return <div>{broken}</div>; }',
           },
         },
         { name: "deploy_preview", arguments: { summary: "Check intentionally invalid source" } },
@@ -357,9 +353,12 @@ try {
   await worked.click();
   assert.equal(await worked.getAttribute("aria-expanded"), "false");
   await page.locator('iframe[aria-busy="false"]').waitFor();
-  await page.frameLocator("iframe").getByRole("heading", { name: "Copper Finch" }).waitFor();
+  await page.frameLocator("iframe").getByText("Copper Finch", { exact: true }).waitFor();
   const built = await appById(id);
   assert(built.current?.verification.passed);
+  assert.equal(built.current.bundle.manifest.schemaVersion, 2);
+  assert(built.current.bundle.files["src/App.tsx"]?.includes("CardContent"));
+  assert.equal(await page.frameLocator("iframe").locator('[data-slot="card"]').count(), 1);
   assert.deepEqual(built.data, dataBefore, "Deployment preserves saved app data");
   const actualAnswer = built.conversation
     ?.at(-1)

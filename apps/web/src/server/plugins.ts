@@ -345,10 +345,15 @@ export async function callPlugin(
   pluginId: string,
   operationId: string,
   parameters: Record<string, unknown>,
+  readOnly = false,
 ): Promise<unknown> {
   const plugin = (await storage(access)).find((entry) => entry.id === pluginId);
   const operation = plugin?.operations.find((entry) => entry.operationId === operationId);
   if (!plugin || !operation) throw new Error("Registered plugin operation not found");
+  if (readOnly && operation.method !== "GET" && operation.method !== "HEAD")
+    throw new Error(
+      "Plugin queries require a GET or HEAD operation. Use an explicit mutation for writes.",
+    );
   for (const key of Object.keys(parameters))
     if (!operation.parameters.some((parameter) => parameter.name === key))
       throw new Error(`Unknown plugin parameter: ${key}`);
