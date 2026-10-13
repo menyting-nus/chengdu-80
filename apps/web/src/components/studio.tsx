@@ -154,7 +154,9 @@ export function Studio() {
   }, [app?.id, defaultSourceFile]);
   const displaySourceFile =
     activeSourceFile === "cd80.json" ||
-    (workspaceBundle && Object.hasOwn(workspaceBundle.files, activeSourceFile))
+    (workspaceBundle &&
+      (Object.hasOwn(workspaceBundle.files, activeSourceFile) ||
+        (workspaceBundle.manifest.schemaVersion === 2 && activeSourceFile.startsWith("starter/"))))
       ? activeSourceFile
       : defaultSourceFile;
   const refreshVersion = useRef(0);
@@ -571,6 +573,7 @@ export function Studio() {
                   {workspaceBundle && (
                     <CodeWorkspace
                       bundle={workspaceBundle}
+                      appId={app.id}
                       workspaceId={`${app.id}:${app.revision}`}
                       activeFile={displaySourceFile}
                       onSelectFile={setActiveSourceFile}

@@ -5,7 +5,7 @@
 // Browser smoke checks are separate from published protocol verification.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser } from "playwright";
@@ -100,6 +100,29 @@ export default function App() {
   assert(assets.javascript.length > 1000 && assets.css.length > 1000);
   await writeFile(`${artifacts}/compiled-app.js`, assets.javascript);
   pass("Version 2 passes source/type/build and independent protocol checks; compiled assets load");
+
+  const sourceResponse = await fetch(`${base}/api/app-source?appId=${app.id}`);
+  assert(sourceResponse.ok, "Actual starter source must be available to the owning workspace");
+  const starter = (await sourceResponse.json()) as { files: Record<string, string> };
+  assert.equal(
+    starter.files["starter/ui/components/button.tsx"],
+    await readFile("packages/ui/src/components/button.tsx", "utf8"),
+  );
+  assert.equal(
+    starter.files["starter/ui/styles/globals.css"],
+    await readFile("packages/ui/src/styles/globals.css", "utf8"),
+  );
+  assert.equal(
+    starter.files["starter/main.tsx"],
+    await readFile("apps/web/starter/main.tsx.template", "utf8"),
+  );
+  assert(starter.files["starter/package.json"]?.includes('"catalog"'));
+  assert(
+    !Object.keys(starter.files).some((name) => name.includes(".env") || name.includes("dist/")),
+  );
+  pass(
+    "Starter source exposes exact shadcn, Tailwind, entry and dependency files without env or compiled output",
+  );
 
   browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -198,6 +221,21 @@ export default function App() {
   await page
     .getByRole("textbox", { name: "src/App.tsx source (read-only)", exact: true })
     .waitFor();
+  await page.locator('[title="starter/ui/components/button.tsx"]').click();
+  await page
+    .getByRole("textbox", {
+      name: "starter/ui/components/button.tsx source (read-only)",
+      exact: true,
+    })
+    .waitFor();
+  await page.locator(".view-lines").filter({ hasText: "buttonVariants" }).waitFor();
+  await page.locator('[title="starter/ui/styles/globals.css"]').click();
+  await page
+    .getByRole("textbox", { name: "starter/ui/styles/globals.css source (read-only)", exact: true })
+    .waitFor();
+  await page.locator(".view-lines").filter({ hasText: "@import" }).waitFor();
+  await page.screenshot({ path: `${artifacts}/starter-tailwind-source.png`, fullPage: true });
+  await page.getByRole("button", { name: "App.tsx", exact: true }).click();
   await page.screenshot({ path: `${artifacts}/tsx-source-tree.png`, fullPage: true });
   assert(
     externalRequests.every((url) => url === "https://example.com/blocked"),

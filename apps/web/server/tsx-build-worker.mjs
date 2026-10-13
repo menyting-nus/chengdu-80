@@ -55,22 +55,7 @@ async function build(files) {
       await writeFile(target, content);
     }
     const entry = path.join(temporary, "src/main.tsx");
-    await writeFile(
-      entry,
-      `import { useEffect } from "react";
-import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import App from "./App";
-const queryClient = new QueryClient();
-function Starter() {
-  useEffect(() => { (window as unknown as { cd80: { ready(): void } }).cd80.ready(); }, []);
-  return <QueryClientProvider client={queryClient}><App /></QueryClientProvider>;
-}
-const root = document.getElementById("root");
-if (!root) throw new Error("React starter requires #root");
-createRoot(root).render(<Starter />);
-`,
-    );
+    await writeFile(entry, await readFile(path.join(webRoot, "starter/main.tsx.template"), "utf8"));
     const program = ts.createProgram([entry], {
       target: ts.ScriptTarget.ES2022,
       module: ts.ModuleKind.ESNext,

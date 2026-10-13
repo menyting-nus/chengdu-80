@@ -51,6 +51,8 @@ COPY --from=build /repo/apps/web/src/lib/contracts.ts ./apps/web/src/lib/contrac
 COPY --from=build /repo/packages/ui/src ./packages/ui/src
 COPY --from=build /repo/packages/ui/node_modules ./packages/ui/node_modules
 COPY --from=build /repo/packages/ui/package.json ./packages/ui/package.json
+COPY --from=build /repo/packages/ui/components.json ./packages/ui/components.json
+COPY --from=build /repo/package.json ./package.json
 COPY --from=build /repo/bun.lock ./bun.lock
 COPY --from=build /repo/apps/web/package.json ./apps/web/package.json
 EXPOSE 3001

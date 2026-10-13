@@ -152,6 +152,7 @@ export async function compileTsx(bundle: AppBundle): Promise<CompiledTsx> {
   for (const filename of [
     "server/tsx-build-worker.mjs",
     "starter/source-policy.mjs",
+    "starter/main.tsx.template",
     "src/lib/contracts.ts",
     "package.json",
   ])
@@ -178,4 +179,36 @@ export async function compileTsx(bundle: AppBundle): Promise<CompiledTsx> {
     if (cache.get(key) === artifacts) cache.delete(key);
     throw error;
   }
+}
+
+// Only these trusted starter files are exposed, never arbitrary host paths or env.
+// Their source is the same source consumed by the compiler, not generated output.
+export async function starterSourceFiles(): Promise<Record<string, string>> {
+  const root = await compilerRoot();
+  const files: Record<string, string> = {};
+  async function collect(directory: string, display: string): Promise<void> {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const filename = path.join(directory, entry.name);
+      const name = `${display}/${entry.name}`;
+      if (entry.isDirectory()) await collect(filename, name);
+      else if (entry.isFile() && /\.(?:tsx?|css)$/.test(entry.name))
+        files[name] = await readFile(filename, "utf8");
+    }
+  }
+  await collect(path.resolve(root, "../../packages/ui/src"), "starter/ui");
+  await collect(path.join(root, "src/lib/generated-app"), "starter/sdk");
+  const references = {
+    "starter/main.tsx": path.join(root, "starter/main.tsx.template"),
+    "starter/compiler/tsx-build-worker.mjs": path.join(root, "server/tsx-build-worker.mjs"),
+    "starter/compiler/source-policy.mjs": path.join(root, "starter/source-policy.mjs"),
+    "starter/compiler/source-policy.d.mts": path.join(root, "starter/source-policy.d.mts"),
+    "starter/package.json": path.resolve(root, "../../package.json"),
+    "starter/web/package.json": path.join(root, "package.json"),
+    "starter/ui/package.json": path.resolve(root, "../../packages/ui/package.json"),
+    "starter/ui/components.json": path.resolve(root, "../../packages/ui/components.json"),
+    "starter/bun.lock": path.resolve(root, "../../bun.lock"),
+  };
+  for (const [name, filename] of Object.entries(references))
+    files[name] = await readFile(filename, "utf8");
+  return files;
 }

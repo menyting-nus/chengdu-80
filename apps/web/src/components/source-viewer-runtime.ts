@@ -24,9 +24,9 @@ export function mountSourceViewer(
   fileName: string,
   content: string,
 ) {
-  const language = /\.tsx?$/.test(fileName)
+  const language = /\.(?:tsx?|mts)$/.test(fileName)
     ? "typescript"
-    : fileName.endsWith(".json")
+    : fileName.endsWith(".json") || fileName.endsWith("bun.lock")
       ? "json"
       : fileName.endsWith(".css")
         ? "css"

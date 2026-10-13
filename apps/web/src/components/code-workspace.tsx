@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { z } from "zod";
+import { Alert, AlertTitle } from "@web-starter/ui/components/alert";
 import {
   FileCssIcon,
   FileHtmlIcon,
@@ -95,15 +98,41 @@ function FileEntries({
 export function CodeWorkspace({
   bundle,
   workspaceId,
+  appId,
   activeFile,
   onSelectFile,
 }: {
   bundle: AppBundle;
   workspaceId: string;
+  appId: string;
   activeFile: SourcePath;
   onSelectFile: (path: SourcePath) => void;
 }) {
-  const files: Record<string, string> = bundle.files;
+  const [starter, setStarter] = useState<{ appId: string; files: Record<string, string> }>();
+  const [sourceError, setSourceError] = useState("");
+  const isReact = bundle.manifest.schemaVersion === 2;
+  useEffect(() => {
+    if (!isReact) return;
+    const controller = new AbortController();
+    setSourceError("");
+    void fetch(`/api/app-source?${new URLSearchParams({ appId })}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Starter source could not load. Reopen Code to retry.");
+        const result = z
+          .object({ files: z.record(z.string(), z.string()) })
+          .parse(await response.json());
+        if (!controller.signal.aborted) setStarter({ appId, files: result.files });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          setSourceError(error instanceof Error ? error.message : "Starter source could not load");
+      });
+    return () => controller.abort();
+  }, [appId, isReact]);
+  const files: Record<string, string> = {
+    ...(isReact && starter?.appId === appId ? starter.files : {}),
+    ...bundle.files,
+  };
   const selected =
     activeFile in files || activeFile === "cd80.json"
       ? activeFile
@@ -121,6 +150,11 @@ export function CodeWorkspace({
           Files
         </div>
         <Separator />
+        {sourceError && (
+          <Alert variant="destructive">
+            <AlertTitle>{sourceError}</AlertTitle>
+          </Alert>
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
           <SidebarMenu aria-label="Application files">
             <FileEntries tree={tree} selected={selected} onSelect={onSelectFile} />
