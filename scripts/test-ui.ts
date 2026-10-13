@@ -237,6 +237,29 @@ try {
   );
   await page.goto(base + "/app/" + initial.id);
   await page.locator('iframe[aria-busy="false"]').waitFor();
+  assert.equal(await page.getByRole("link", { name: "Chengdu80", exact: true }).count(), 0);
+  assert.equal(await page.title(), initial.current!.spec.name);
+  assert.equal(
+    await page.locator('meta[name="description"]').getAttribute("content"),
+    initial.current!.spec.purpose.slice(0, 300),
+  );
+  assert.equal(
+    await page.locator('meta[property="og:title"]').getAttribute("content"),
+    initial.current!.spec.name,
+  );
+  assert.equal(
+    await page.locator('link[rel="canonical"]').getAttribute("href"),
+    `${base}/app/${initial.id}`,
+  );
+  assert.equal(await page.locator('link[rel="icon"][href="/favicon.svg"]').count(), 0);
+  const appBounds = await page.locator("iframe").boundingBox();
+  assert(
+    appBounds &&
+      appBounds.x === 0 &&
+      appBounds.y === 0 &&
+      appBounds.width === 1440 &&
+      appBounds.height === 1000,
+  );
   results.push("Developer docs and standalone app routes");
   assert.deepEqual(errors, []);
   await writeFile(

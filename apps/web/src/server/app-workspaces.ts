@@ -496,7 +496,11 @@ export async function buildProject(
     signal: options.signal,
   });
   if (built.exitCode !== 0)
-    throw new Error((built.stderr || built.stdout || "Application build failed").slice(-12_000));
+    throw new Error(
+      ([built.stdout, built.stderr].filter(Boolean).join("\n") || "Application build failed").slice(
+        -12_000,
+      ),
+    );
   const [server, client] = await Promise.all([
     stat(path.join(workspace.directory, "dist/server/server.js")),
     stat(path.join(workspace.directory, "dist/client")),

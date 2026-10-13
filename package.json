@@ -34,6 +34,7 @@
     "test:flow": "bun scripts/test-flow.ts",
     "test:model-contract": "bun scripts/test-model-contract.ts",
     "examples": "bun scripts/export-examples.ts",
+    "starter:sync": "bun scripts/sync-app-starter.ts",
     "dev": "vp run -r --parallel dev",
     "dev:web": "vp run --filter web dev",
     "dev:server": "vp run --filter @web-starter/backend dev",

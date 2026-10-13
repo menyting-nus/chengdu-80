@@ -5,7 +5,13 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@web-starter/ui/comp
 import { Spinner } from "@web-starter/ui/components/spinner";
 import { api } from "../lib/client";
 
-export function AppFrame({ app, release }: { app: Application; release: Release }) {
+export function AppFrame({
+  app,
+  release,
+}: {
+  app: Pick<Application, "id" | "name">;
+  release: Pick<Release, "id">;
+}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");

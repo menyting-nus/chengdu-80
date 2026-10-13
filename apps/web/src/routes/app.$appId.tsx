@@ -1,35 +1,44 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import { AppFrame } from "../components/app-frame";
 import { Alert, AlertTitle, AlertDescription } from "@web-starter/ui/components/alert";
-import { api } from "../lib/client";
-import type { Application } from "../lib/contracts";
-export const Route = createFileRoute("/app/$appId")({ component: PublishedApp });
+import { loadPublishedApp } from "../server/published-app";
+
+export const Route = createFileRoute("/app/$appId")({
+  loader: ({ params }) => loadPublishedApp({ data: { appId: params.appId } }),
+  head: ({ loaderData }) =>
+    loaderData
+      ? {
+          meta: [
+            { title: loaderData.title },
+            { name: "description", content: loaderData.description },
+            { property: "og:title", content: loaderData.title },
+            { property: "og:description", content: loaderData.description },
+            { property: "og:type", content: "website" },
+            { property: "og:url", content: loaderData.canonical },
+            { name: "twitter:card", content: "summary" },
+            { name: "twitter:title", content: loaderData.title },
+            { name: "twitter:description", content: loaderData.description },
+          ],
+          links: [
+            { rel: "canonical", href: loaderData.canonical },
+            { rel: "icon", type: "image/svg+xml", href: loaderData.icon },
+          ],
+        }
+      : {},
+  component: PublishedApp,
+  errorComponent: ({ error }) => (
+    <Alert variant="destructive">
+      <AlertTitle>Application unavailable</AlertTitle>
+      <AlertDescription>{error.message}</AlertDescription>
+    </Alert>
+  ),
+});
+
 function PublishedApp() {
-  const { appId } = Route.useParams();
-  const [app, setApp] = useState<Application | null>(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    api()
-      .then((s) => {
-        const found = s.apps.find((a: Application) => a.id === appId);
-        if (!found?.current) throw new Error("Accepted application not found or access denied");
-        setApp(found);
-      })
-      .catch((e) => setError(e.message));
-  }, [appId]);
+  const { app, release } = Route.useLoaderData();
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {error ? (
-        <Alert variant="destructive">
-          <AlertTitle>Application unavailable</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : app?.current ? (
-        <AppFrame app={app} release={app.current} />
-      ) : (
-        <p>Opening application…</p>
-      )}
+    <main aria-label="Standalone application" className="flex h-svh min-h-0 min-w-0 flex-col">
+      <AppFrame app={app} release={release} />
     </main>
   );
 }

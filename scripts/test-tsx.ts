@@ -115,12 +115,47 @@ try {
     `export default function Summary({value}:{value:number}){return <output aria-label="Portfolio total">{value}</output>;}`;
   bundle.files["src/routes/about.tsx"] =
     `import {createFileRoute} from '@tanstack/react-router';export const Route=createFileRoute('/about')({component:()=> <h1>Actual second Start route</h1>});`;
+  bundle.files["src/components/toolkit-check.tsx"] = `import {useRef} from 'react';
+import {defineChart,barY} from '@tanstack/charts';
+import {Chart} from '@tanstack/charts/react';
+import {scaleBand} from '@tanstack/charts/scales/band';
+import {scaleLinear} from '@tanstack/charts/scales/linear';
+import {tableFeatures,useTable,type ColumnDef} from '@tanstack/react-table';
+import {useForm} from '@tanstack/react-form';
+import {useVirtualizer} from '@tanstack/react-virtual';
+import Decimal from 'decimal.js';
+import Papa from 'papaparse';
+import {format,parseISO} from 'date-fns';
+import {Button} from '@/components/ui/button';
+import {Table,TableBody,TableRow,TableCell} from '@/components/ui/table';
+type Holding={symbol:string;value:string};
+const rows=Papa.parse<Holding>('symbol,value\\nCASH,0.1\\nSTOCK,0.2',{header:true}).data;
+const exact=rows.reduce((sum,row)=>sum.plus(row.value),new Decimal(0)).toFixed(2);
+const features=tableFeatures({});
+const columns:ColumnDef<typeof features,Holding>[]=[{accessorKey:'symbol'},{accessorKey:'value'}];
+const definition=defineChart({marks:[barY(rows.map(row=>({symbol:row.symbol,value:new Decimal(row.value).toNumber()})),{x:'symbol',y:'value'})],scales:{x:{scale:()=>scaleBand().padding(0.2)},y:{scale:scaleLinear,nice:true}}});
+export default function ToolkitCheck(){
+ const table=useTable({features,columns,data:rows});
+ const form=useForm({defaultValues:{currency:'USD'}});
+ const scroll=useRef<HTMLDivElement>(null);
+ const virtual=useVirtualizer({count:20,getScrollElement:()=>scroll.current,estimateSize:()=>24});
+ return <section aria-label="Finance toolkit">
+ <output aria-label="Exact CSV total">{exact}</output>
+ <output aria-label="Formatted financial date">{format(parseISO('2026-10-14'),'yyyy-MM-dd')}</output>
+ <Chart definition={definition} height={180} ariaLabel="Finance allocation"/>
+ <Table aria-label="Toolkit holdings"><TableBody>{table.getRowModel().rows.map(row=><TableRow key={row.id}>{row.getAllCells().map(cell=><TableCell key={cell.id}><table.FlexRender cell={cell}/></TableCell>)}</TableRow>)}</TableBody></Table>
+ <form.Subscribe selector={state=>state.values.currency}>{currency=><output aria-label="Toolkit currency">{currency}</output>}</form.Subscribe>
+ <Button onClick={()=>form.setFieldValue('currency','CNY')}>Set CNY</Button>
+ <div ref={scroll} className="h-24 overflow-auto" aria-label="Virtual holdings"><div className="relative" style={{height:virtual.getTotalSize()}}>{virtual.getVirtualItems().map(item=><div key={item.key} className="absolute top-0 left-0" style={{transform:'translateY('+item.start+'px)'}}>Virtual position {item.index}</div>)}</div></div>
+ </section>;
+}`;
   bundle.files["src/App.tsx"] = `import {useEffect,useState} from 'react';
 import {createServerFn} from '@tanstack/react-start';
 import {Button} from '@/components/ui/button';
 import {Card,CardHeader,CardTitle,CardContent} from '@/components/ui/card';
 import {cd80,portfolioInputSchema} from '@/lib/cd80';
 import Summary from './components/summary';
+import ToolkitCheck from './components/toolkit-check';
 const probe=createServerFn({method:'POST'}).handler(async()=>{
  const fs=await import('node:fs/promises');
  let hostFileAccessible=false;let hostEnvFileAccessible=false;let networkAccessible=false;
@@ -135,7 +170,7 @@ export default function App(){
  const[error,setError]=useState('');
  useEffect(()=>{void cd80.storage.read('inputs',portfolioInputSchema).then(async input=>{if(input)setTotal((await cd80.finance.portfolio(input)).totalValue);}).catch(error=>setError(String(error)));},[]);
  return <Card className="m-4"><CardHeader><CardTitle>Actual TanStack Start SSR</CardTitle></CardHeader><CardContent>
- <Summary value={total??0}/><Button onClick={()=>setCount(count+1)}>Count {count}</Button>
+ <ToolkitCheck/><Summary value={total??0}/><Button onClick={()=>setCount(count+1)}>Count {count}</Button>
  <Button onClick={()=>{void probe().then(setIsolation).catch(error=>setError(String(error)));}}>Run server function</Button>
  <Button onClick={()=>{void cd80.storage.write('note','saved by real SDK').then(()=>setError('Saved')).catch(error=>setError(String(error)));}}>Save note</Button>
  {isolation?<pre aria-label="Isolation result">{JSON.stringify(isolation)}</pre>:null}<p role="status">{error}</p>
@@ -196,6 +231,28 @@ export default function App(){
   assert.notEqual(appearance.radius, "0px");
   await button.click();
   await frame.getByRole("button", { name: "Count 1", exact: true }).waitFor();
+  await frame.locator('output[aria-label="Exact CSV total"]').filter({ hasText: "0.30" }).waitFor();
+  await frame
+    .locator('output[aria-label="Formatted financial date"]')
+    .filter({ hasText: "2026-10-14" })
+    .waitFor();
+  const allocation = frame.locator('[aria-label="Finance allocation"]').first();
+  await allocation.waitFor();
+  assert(
+    await allocation.evaluate(
+      (element) => element.tagName.toLowerCase() === "svg" || Boolean(element.querySelector("svg")),
+    ),
+  );
+  assert.equal(
+    await frame.getByRole("table", { name: "Toolkit holdings" }).getByRole("row").count(),
+    2,
+  );
+  await frame.getByRole("button", { name: "Set CNY", exact: true }).click();
+  await frame.locator('output[aria-label="Toolkit currency"]').filter({ hasText: "CNY" }).waitFor();
+  await frame.getByText("Virtual position 0", { exact: true }).waitFor();
+  pass(
+    "Finance toolkit renders real TanStack charts, tables, forms and virtual rows with validated CSV, exact decimals and dates",
+  );
   await frame.getByRole("button", { name: "Run server function", exact: true }).click();
   const isolation = frame.locator('pre[aria-label="Isolation result"]');
   await isolation.waitFor().catch(async (error: unknown) => {
