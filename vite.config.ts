@@ -2,7 +2,7 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   fmt: {
-    ignorePatterns: [],
+    ignorePatterns: ["packages/backend/convex/_generated/**"],
   },
   lint: {
     plugins: ["typescript", "unicorn", "oxc"],

@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { configuredEnvironment, platformRoot } from "./environment";
@@ -5,8 +6,19 @@ import { configuredEnvironment, platformRoot } from "./environment";
 const env = configuredEnvironment();
 const task = process.argv[2] || "codegen";
 if (!["codegen", "push"].includes(task)) throw new Error("Unknown Convex task");
-if (!env.CONVEX_DEPLOY_KEY) throw new Error("Add CONVEX_DEPLOY_KEY to workspace .env");
-if (task === "push" && !env.CONVEX_DEPLOY_KEY.startsWith("dev:"))
+const localFile = resolve(platformRoot, "packages/backend/.env.local");
+const local =
+  existsSync(localFile) &&
+  /^CONVEX_DEPLOYMENT=(anonymous|local):/m.test(readFileSync(localFile, "utf8"));
+if (
+  !env.CONVEX_DEPLOY_KEY &&
+  !local &&
+  !(env.CONVEX_SELF_HOSTED_URL && env.CONVEX_SELF_HOSTED_ADMIN_KEY)
+)
+  throw new Error(
+    "Configure local Convex with bun run dev:convex, or provide self-hosted / cloud credentials",
+  );
+if (task === "push" && env.CONVEX_DEPLOY_KEY && !env.CONVEX_DEPLOY_KEY.startsWith("dev:"))
   throw new Error("Prototype backend push requires a development deploy key");
 env.CD80_DEMO_MODE ??= "1";
 console.log(

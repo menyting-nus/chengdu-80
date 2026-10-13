@@ -8,12 +8,16 @@ The prototype is deployed at [Chengdu80 studio](https://chengdu80-web-live-anant
 
 ```bash
 bun install --frozen-lockfile
-bun run dev:local
+bun run dev:convex
 ```
 
-Open http://127.0.0.1:3001. Local mode has one demo owner and persists apps in `.local/apps.json`. The server binds to loopback; this is not hosted authentication.
+Open http://127.0.0.1:3001. This starts the real local Convex backend and the Vite development server, with a shared demo workspace and login deferred. No Docker or Convex Cloud account is required. Convex stores apps, conversations, releases, and plugin registrations. Backend state lives in `packages/backend/.convex/local/`; keep it to preserve data across restarts.
 
-The launcher reads `apps/web/.env`, `platform/.env`, then the workspace `../.env`. Non-empty workspace values take precedence. Secrets stay server-side.
+To import an existing file-backed workspace once, use `bun run dev:convex --import-files .local/review-instance`. Existing IDs are skipped and source files are retained. `CD80_PORT=3002` selects a different frontend port.
+
+`bun run dev:local` remains an explicit file-backed prototype launcher for isolated fixture tests. It does not use Convex.
+
+The launcher reads `apps/web/.env`, root `.env`, then the workspace `../.env`. Non-empty workspace values take precedence. Secrets stay server-side.
 
 ```bash
 bun run setup:env      # Creates ../.env only when absent, with local secrets

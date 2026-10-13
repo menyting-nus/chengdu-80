@@ -76,10 +76,13 @@ export async function saveApp(access: Access, app: Application, expectedRevision
   const config = await settings();
   if (!config.PLATFORM_INTERNAL_KEY)
     throw new Error("PLATFORM_INTERNAL_KEY is missing from hosted configuration");
+  // TanStack AI uses Date instances for message timestamps. Match the JSON
+  // persistence contract before passing values to Convex's stricter serializer.
+  const persistedApp: Application = JSON.parse(JSON.stringify(app));
   return (await client(access)).action(
     (await demoMode()) ? api.platform.saveDemo : api.platform.save,
     {
-      app,
+      app: persistedApp,
       expectedRevision,
       serverKey: config.PLATFORM_INTERNAL_KEY,
     },
