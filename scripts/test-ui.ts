@@ -123,6 +123,7 @@ try {
     initialSourceApp.current?.bundle,
     "Viewer formatting must not change stored source",
   );
+  await page.getByRole("button", { name: "lib", exact: true }).click();
   await page.getByRole("button", { name: "cd80.ts", exact: true }).click();
   const editor = page.getByRole("textbox", {
     name: "src/lib/cd80.ts source (read-only)",

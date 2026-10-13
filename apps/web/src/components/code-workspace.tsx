@@ -54,7 +54,7 @@ function FileEntries({
     <>
       {[...tree.folders].map(([name, children]) => (
         <SidebarMenuItem key={name}>
-          <details open>
+          <details open={!["components", "lib", "libs"].includes(name)}>
             <SidebarMenuButton render={<summary />}>
               <FolderIcon />
               <span>{name}</span>
