@@ -780,6 +780,7 @@ function AgentChatView({
               <InputGroupButton
                 className="ml-auto"
                 size="icon-sm"
+                variant="destructive"
                 aria-label="Stop generation"
                 onClick={stop}
               >
