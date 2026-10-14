@@ -5,8 +5,9 @@
     scrollbar-gutter: stable;
   }
 
-  /* The studio scrolls inside its panes, so the document needs no extra gutter. */
-  html:has(main[aria-label="Application workspace"]) {
+  /* Studio panes and standalone apps scroll inside their own containers. */
+  html:has(main[aria-label="Application workspace"]),
+  html:has(main[aria-label="Standalone application"]) {
     scrollbar-gutter: auto;
     overflow: clip;
   }

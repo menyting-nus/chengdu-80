@@ -6,7 +6,11 @@ import { z } from "zod";
 export const formatSource = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
-      fileName: z.enum(["app.js", "calculations.js", "index.html", "style.css", "cd80.json"]),
+      fileName: z
+        .string()
+        .max(300)
+        .regex(/^(?:[\w$().[\]-]+\/)*[\w$().[\]-]+\.(?:tsx?|[cm]?js|html|css|jsonc?)$/)
+        .refine((name) => !name.split("/").some((segment) => segment === "." || segment === "..")),
       content: z.string().max(250000),
     }),
   )

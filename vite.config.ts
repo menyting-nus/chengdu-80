@@ -2,9 +2,11 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   fmt: {
-    ignorePatterns: [],
+    ignorePatterns: ["packages/backend/convex/_generated/**"],
   },
   lint: {
+    // Starter source uses its own project aliases and build configuration.
+    ignorePatterns: ["apps/web/starter/project/**"],
     plugins: ["typescript", "unicorn", "oxc"],
     categories: {
       correctness: "error",

@@ -10,7 +10,13 @@ export const Route = createFileRoute("/api/platform")({
     handlers: {
       GET: async ({ request }) => {
         try {
-          return response(await snapshot(await accessFor(request)));
+          return response(
+            await snapshot(
+              await accessFor(request),
+              new URL(request.url).searchParams.get("summary") !== "1",
+              new URL(request.url).searchParams.get("status") === "1",
+            ),
+          );
         } catch {
           return response({ error: "Authentication or platform configuration is required" }, 401);
         }

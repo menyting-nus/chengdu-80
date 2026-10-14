@@ -11,6 +11,25 @@ export default defineSchema({
   })
     .index("by_owner", ["ownerId"])
     .index("by_app", ["appId"]),
+  threads: defineTable({
+    threadId: v.string(),
+    appId: v.string(),
+    ownerId: v.string(),
+    title: v.string(),
+    metadata: v.string(),
+    updatedAt: v.number(),
+  })
+    .index("by_owner", ["ownerId"])
+    .index("by_thread", ["threadId"]),
+  messages: defineTable({
+    threadId: v.string(),
+    messageId: v.string(),
+    order: v.number(),
+    // TanStack message parts evolve independently; JSON keeps their wire representation intact.
+    payload: v.string(),
+  })
+    .index("by_thread_order", ["threadId", "order"])
+    .index("by_thread_message", ["threadId", "messageId"]),
   plugins: defineTable({
     pluginId: v.string(),
     ownerId: v.string(),

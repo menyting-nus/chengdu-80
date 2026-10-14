@@ -2,18 +2,28 @@
 
 A financial application studio using the selected [web-starter](https://github.com/adityamiskin/web-starter): Bun, TanStack Start, React, Tailwind 4, shadcn, Convex, WorkOS, TanStack AI, deployed as a self-hosted Node server (Docker/docker-compose). Previously deployed to Cloudflare through Alchemy 2; see "Historical Cloudflare deployment" below.
 
-The prototype is deployed at [Chengdu80 studio](https://chengdu80-web-live-ananthacharya-mb7epyiddt4jehqm.chengdu80-1610dcd1.workers.dev). It supports specification review, financial examples, source-code import, isolated calculations, shared app data, and reviewed updates. Login is deferred: all visitors share the same demo workspace. The labelled example builder does not generate arbitrary custom changes.
+The studio builds and updates apps through conversation. The AI edits actual source files with TanStack AI tools, verifies the changes and activates passing releases automatically. Login is deferred in demo mode: visitors share the same workspace.
 
 ## Run locally
 
 ```bash
 bun install --frozen-lockfile
-bun run dev:local
+bun run dev:convex
 ```
 
-Open http://127.0.0.1:3001. Local mode has one demo owner and persists apps in `.local/apps.json`. The server binds to loopback; this is not hosted authentication.
+Open http://127.0.0.1:3001. This starts the real local Convex backend and the Vite development server, with a shared demo workspace and login deferred. No Docker or Convex Cloud account is required. Convex stores apps, releases and plugin registrations. Thread titles and turn state live in `threads`; complete TanStack AI messages live in `messages`, indexed by thread and order. Each message retains its ordered text, thinking and tool parts. The sidebar subscribes to thread summaries, while the workspace subscribes only to the selected app and its messages. Backend state lives in `packages/backend/.convex/local/`; keep it to preserve data across restarts.
 
-The launcher reads `apps/web/.env`, `platform/.env`, then the workspace `../.env`. Non-empty workspace values take precedence. Secrets stay server-side.
+To import an existing file-backed workspace once, use `bun run dev:convex --import-files .local/review-instance`. Existing IDs are skipped and source files are retained. `CD80_PORT=3002` selects a different frontend port.
+
+Existing embedded chat histories can be migrated through the trusted `platform.migrateChatStorage` action. It is idempotent and preserves source files and message IDs. Creating threads, saving prompts, renaming, stopping and deleting use controlled Convex mutations. Every tab, including the sender, renders the same subscribed message records. The sidebar delete action confirms removal of a thread, its messages and its associated app.
+
+Generation runs through TanStack AI on the Node server after it claims a saved queued turn. SSE is consumed only for execution status and errors; streaming message text is checkpointed to Convex once per second and flushed when the turn ends. Model context is compacted separately from stored conversation history. Verification, shell tools, external plugin calls and permission-checked app runtime operations continue on Node.
+
+Agent runs have no overall time or iteration cap. Stop cancels a run; sending another message interrupts it and continues from the saved conversation and workspace. The previous writer finishes before the replacement starts. Individual shell/build commands retain resource limits. Consecutive tool calls appear in one expandable activity group between assistant text messages.
+
+`bun run dev:local` remains an explicit file-backed prototype launcher for local development. It does not use Convex.
+
+The launcher reads `apps/web/.env`, root `.env`, then the workspace `../.env`. Non-empty workspace values take precedence. Secrets stay server-side.
 
 ```bash
 bun run setup:env      # Creates ../.env only when absent, with local secrets
@@ -26,41 +36,41 @@ For Node 24+ using an HTTP proxy, set `NODE_USE_ENV_PROXY=1`, `HTTPS_PROXY`, `HT
 
 ## Try the product
 
-1. Enter an English financial question, prepare its specification, and edit the scope before confirming.
-2. Build with the model or labelled example builder. Review the app and Checks tab; accept the release.
-3. Edit shared inputs from the accepted app. Preview storage is read-only.
-4. Request a change. The accepted release keeps running while its update is checked. Accepting retains shared data.
-5. Import a compatible bundle from `examples/` or another coding tool. Choose New application for a separate app; import while an app is selected for an update.
-6. For an accepted Strategy app, open Connections and load real daily prices. Local mode uses the narrow Alpha Vantage public demo for `600104.SHH`; hosted mode uses configured Tushare. Source, dates and limits accompany the data.
+1. Start a new chat and describe the app. The thread and prompt are saved in Convex.
+2. The agent edits source, runs checks and activates passing changes automatically.
+3. Use Preview to interact with the app, or Code to inspect its read-only source tree.
+4. Request changes in the same conversation. Failed updates retain the working release and shared data.
+5. Register an OpenAPI plugin in Connections. The agent can discover and enable it, and generated apps use the permission-checked SDK to call its operations.
 
 Portfolio, screening and strategy protocols are provisional feasibility examples. Final application categories remain open. Additional compatible apps can be imported and run.
 
 ## Source and runtime
 
-Public docs: `/docs` and `/api/docs`. A bundle contains a manifest and exactly `index.html`, `app.js`, `calculations.js`, `style.css`; alternatively select these files plus `cd80.json` together. Limit: 250 KB. Arbitrary server frameworks, package installation and remote resources are outside this prototype's import format.
+Public docs: `/docs` and `/api/docs`. Each new app is an actual TanStack Start project, with `package.json`, `vite.config.ts`, `tsconfig.json`, routes, router, Tailwind stylesheet, local shadcn Nova components and a typed SDK. The agent edits these files through source tools and real Bash commands. The Code tree shows only actual app files, including its framework configuration; platform runner internals stay outside the app.
 
-Browser apps run in opaque-origin iframes with restrictive CSP and a permission-checked `cd80.call()` bridge. `calculations.js` exports `analyze(input)` and always runs in a separate Miniflare/workerd isolate (no Cloudflare account required), without secrets or network access. CPU is capped and a 3-second disposal timeout applies. App sources, releases and shared data are in Convex.
+The finance starter preinstalls TanStack Charts, Table, Form, Virtual, Query and AI/AI React, plus Decimal.js, date-fns, Papa Parse and D3 time scales. Its README records version-specific APIs; `read_starter_reference` exposes that guide and pinned package versions to the builder. Stock shadcn controls are included as source. Run `bun run starter:sync` after editing the starter files, then regenerate Convex bindings.
 
-Releases require syntax, contract, permission, credential-pattern, numerical fixture, boundary, and applicable invalid-input checks. SHA-256 binds checks to exact source. Passing establishes the tested protocol contract, not certification of every additional calculation or the full specification. Review custom logic and rendered previews.
+Standalone `/app/:appId` pages show only the application. Their server-rendered title, description, Open Graph/Twitter tags and canonical URL come from the active specification; the favicon comes from the app's public SVG or its initial. The builder also maintains metadata in the generated app's root route.
+
+Source snapshots and metadata are stored in Convex. The Node platform materializes each app/turn/release in its own checkout and runs the project's standard `bun run build` and `bun run check` commands. Its Vite development server provides the live preview, including SSR, routing and server functions. The project uses pinned, preinstalled dependencies; build-time outbound networking is disabled. Dependency/build caches and environment files are excluded from persisted source. Source limits are 200 files, 200 KB total, and 60 KB per file; JSON uploads remain limited to 250 KB.
+
+Generated configuration, build scripts and server code run inside Bubblewrap user, mount, PID and network namespaces. Only the app checkout, its own temporary directories, runtime binaries and read-only installed packages are mounted. Platform environment variables, credentials, host project files and host networking are unavailable. Processes have time, memory, process-count, file-size and output limits. Linux user namespaces, `bwrap` and `prlimit` are required; unsupported isolation fails closed.
+
+Previews use signed, short-lived, owner-scoped URLs through a Unix-socket proxy. Platform cookies and authorization are stripped before forwarding to the app. An opaque iframe and restrictive CSP keep the existing permission-checked browser SDK bridge: plugin credentials and financial/storage/AI operations remain on the platform. Financial capabilities use trusted functions. Browser logs return to the conversation.
+
+Passing project builds activate automatically; failed builds retain the working release and saved data. Source hashes bind checks to the exact project snapshot. The full framework workspace supersedes the earlier source-bundle compiler; legacy project formats are unsupported.
 
 Nine capabilities cover normalized market data, reusable financial functions, custom calculations, shared storage and managed AI. New providers require adapters. `_provenance` is reserved; edited inputs are labelled user-entered. AI explanations use server-recomputed saved inputs.
 
 ## Verification
 
 ```bash
-bun run test:prototype       # 12 financial, sandbox, hash and persistence checks
-bun run test:flow            # 13 HTTP lifecycle checks on temporary data
-bun run test:model-contract  # 3 mock Responses transport checks, not live inference
-bun run test:glm-contract    # 10 mock GLM format/recovery/deadline checks
-bun run test:query-stream    # 2 query-stream hydration regressions
+bun run codegen             # Requires configured Convex deployment
 bun run check
 bun run build
-bun run codegen             # Requires configured Convex deployment
-bun run deploy:backend      # Loads workspace credentials; development deployments only
-bun scripts/test-hosted.ts https://your-worker.workers.dev # 15 live checks; creates/updates one test app
 ```
 
-Lifecycle tests do not modify workspace apps. `bun run examples` regenerates bundles, split source, schemas and protocol instructions. `examples/imported-risk-desk.cd80.json` demonstrates a fourth app with custom imported browser code.
+`bun run examples` exports complete source bundles, schemas and protocol instructions to ignored `.local/examples/`. Documentation downloads assemble examples from the shared starter at runtime.
 
 ## Self-hosted deployment
 
@@ -103,4 +113,4 @@ The supplied token and Workers upgrade were sufficient. Deployment from China us
 - `packages/backend/convex`: hosted account-owned storage
 - `apps/web/Dockerfile`, `docker-compose.yml`: self-hosted Node build and deployment stack
 - `scripts`: launchers, credential checks, exports and verification
-- `patches`: persisted TanStack query-stream fix; `bun run test:query-stream` checks closed-stream hydration. GLM malformed JSON gets one format recovery within its existing deadline, checked by `bun run test:glm-contract`.
+- `patches`: persisted TanStack query-stream fix for closed-stream hydration.

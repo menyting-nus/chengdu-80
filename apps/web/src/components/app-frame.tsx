@@ -1,24 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Application, Release } from "../lib/contracts";
 import { Alert, AlertTitle, AlertDescription } from "@web-starter/ui/components/alert";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@web-starter/ui/components/empty";
+import { Spinner } from "@web-starter/ui/components/spinner";
 import { api } from "../lib/client";
 
-export function AppFrame({ app, release }: { app: Application; release: Release }) {
+export function AppFrame({
+  app,
+  release,
+}: {
+  app: Pick<Application, "id" | "name">;
+  release: Pick<Release, "id">;
+}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
+  const [session, setSession] = useState<{ releaseId: string; url: string }>();
   const nonce = useMemo(() => crypto.randomUUID().replaceAll("-", ""), [release.id]);
-  const onFrameLoad = useMemo(() => {
-    let loads = 0;
-    return () => {
-      if (++loads > 1) {
-        setReady(false);
-        setError(
-          "Application navigation was blocked or left the isolated preview. Review the app source.",
-        );
-      }
-    };
-  }, [nonce]);
   useEffect(() => {
     setReady(false);
     setError("");
@@ -95,24 +93,49 @@ export function AppFrame({ app, release }: { app: Application; release: Release 
         setError(
           "If the app stays blank, review its source and browser behavior before continuing.",
         ),
-      15000,
+      60000,
     );
     return () => {
       window.removeEventListener("message", receive);
       clearTimeout(timer);
     };
   }, [app.id, release.id, nonce]);
-  const doc = useMemo(() => {
-    const sdk = `const report=message=>parent.postMessage({channel:'cd80',nonce:'${nonce}',log:{message:String(message)}},'*');window.addEventListener('error',e=>report(e.message));window.addEventListener('unhandledrejection',e=>report(e.reason instanceof Error?e.reason.message:e.reason));const pending=new Map();let count=0;window.cd80={call(capability,input={}){return new Promise((resolve,reject)=>{const id=String(++count);const timer=setTimeout(()=>{pending.delete(id);reject(new Error('Capability request timed out'));},100000);pending.set(id,{resolve,reject,timer});parent.postMessage({channel:'cd80',nonce:'${nonce}',id,capability,input},'*');});},ready(){parent.postMessage({channel:'cd80',nonce:'${nonce}',ready:true},'*');}};window.addEventListener('message',e=>{const m=e.data;if(e.source!==parent||!m||m.channel!=='cd80-result'||m.nonce!=='${nonce}')return;const p=pending.get(m.id);if(!p)return;clearTimeout(p.timer);pending.delete(m.id);m.error?p.reject(new Error(m.error)):p.resolve(m.result);});`;
-    const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none';`;
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,textarea{scrollbar-gutter:stable}${release.bundle.files["style.css"].replace(/<\/style/gi, "<\\/style")}</style></head><body>${release.bundle.files["index.html"]}<script nonce="${nonce}">${sdk}</script><script nonce="${nonce}" type="module">${release.bundle.files["app.js"].replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
-  }, [nonce, release.bundle]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const query = new URLSearchParams({ appId: app.id, releaseId: release.id, nonce });
+    void fetch(`/api/app-preview-session?${query}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error("Verified preview could not load. Refresh or rebuild the app.");
+        const result: unknown = await response.json();
+        if (
+          !result ||
+          typeof result !== "object" ||
+          !("url" in result) ||
+          typeof result.url !== "string" ||
+          !/^\/api\/app-preview\/[a-f0-9]{32}\.[A-Za-z0-9_-]{43}\/$/.test(result.url)
+        )
+          throw new Error("Invalid preview session");
+        if (!controller.signal.aborted) setSession({ releaseId: release.id, url: result.url });
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted)
+          setError(reason instanceof Error ? reason.message : "Preview could not load");
+      });
+    return () => controller.abort();
+  }, [app.id, release.id, nonce]);
+  const previewUrl = session?.releaseId === release.id ? session.url : undefined;
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       {!ready && !error && (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading preview…
-        </p>
+        <Empty className="absolute inset-0 bg-background" role="status" aria-live="polite">
+          <EmptyHeader>
+            <EmptyMedia>
+              <Spinner className="size-6 motion-reduce:animate-none" aria-hidden="true" />
+            </EmptyMedia>
+            <EmptyTitle>Loading preview</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       )}
       {!ready && error && (
         <Alert>
@@ -120,17 +143,18 @@ export function AppFrame({ app, release }: { app: Application; release: Release 
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <iframe
-        ref={frame}
-        onLoad={onFrameLoad}
-        key={release.id}
-        title={`${app.name} application`}
-        aria-busy={!ready}
-        srcDoc={doc}
-        sandbox="allow-scripts"
-        referrerPolicy="no-referrer"
-        className="min-h-0 w-full flex-1 border-0"
-      />
+      {previewUrl && (
+        <iframe
+          ref={frame}
+          key={release.id}
+          title={`${app.name} application`}
+          aria-busy={!ready}
+          src={previewUrl}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          className="min-h-0 w-full flex-1 border-0"
+        />
+      )}
     </div>
   );
 }

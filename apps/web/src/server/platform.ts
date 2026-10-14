@@ -10,6 +10,7 @@ import {
   type Release,
 } from "../lib/contracts";
 import { calculate, defaultData, fixtureMeta } from "../lib/finance";
+import { tsxStarter } from "../lib/tsx-starter";
 import { sampleBundle } from "../lib/samples";
 import { auth } from "../integrations/auth";
 import { clarify, explain, feasibility, generate } from "./models";
@@ -74,10 +75,10 @@ export async function accessFor(request: Request): Promise<Access> {
   if (!session.viewer || !session.accessToken) throw new Error("Authentication required");
   return { ownerId: session.viewer.id, accessToken: session.accessToken };
 }
-export async function snapshot(access: Access) {
+export async function snapshot(access: Access, includeMessages = true, statusOnly = false) {
   const config = await settings();
   return {
-    apps: await listApps(access),
+    apps: statusOnly ? [] : await listApps(access, includeMessages),
     protocols,
     status: {
       local: await localMode(),
@@ -87,7 +88,7 @@ export async function snapshot(access: Access) {
       modelConfigured: !!modelConfiguration(config).apiKey,
       tushareConfigured: !!config.TUSHARE_TOKEN,
       hostedDatabaseConfigured: !!config.VITE_CONVEX_URL,
-      runtime: "Miniflare workerd sandbox",
+      runtime: "Isolated TanStack Start application workspaces",
     },
   };
 }
@@ -96,12 +97,13 @@ export async function makeRelease(
   bundle: AppBundle,
   origin: Release["origin"],
   notes: string,
+  signal?: AbortSignal,
 ): Promise<Release> {
   return {
     id: crypto.randomUUID(),
     bundle,
     spec,
-    verification: await verify(bundle, spec),
+    verification: await verify(bundle, spec, signal),
     createdAt: new Date().toISOString(),
     origin,
     notes,
@@ -135,6 +137,8 @@ export async function applyRelease(app: Application, release: Release) {
   app.preview = null;
   app.spec = release.spec;
   app.name = release.spec.name;
+  app.workspace = release.bundle;
+  app.workspaceSpec = release.spec;
   return true;
 }
 async function build(
@@ -168,6 +172,7 @@ async function build(
 export async function dispatch(access: Access, raw: unknown) {
   const req = requestSchema.parse(raw);
   if (req.action === "create-workspace") {
+    if (!(await localMode())) throw new Error("Create conversations through the Convex mutation.");
     const app = newApp(access, {
       ...protocols[0]!.defaultSpec,
       name: "New chat",
@@ -175,10 +180,7 @@ export async function dispatch(access: Access, raw: unknown) {
     });
     app.chatTitle = "New chat";
     app.conversation = [];
-    const scaffold = sampleBundle(app.spec);
-    scaffold.files["index.html"] = '<main id="app"></main>';
-    scaffold.files["app.js"] = "cd80.ready();";
-    scaffold.files["style.css"] = "";
+    const scaffold = tsxStarter(app.spec);
     app.workspace = scaffold;
     const saved = await saveApp(access, app, null);
     const { generateChatTitle } = await import("./chat-title");
@@ -361,6 +363,7 @@ export async function dispatch(access: Access, raw: unknown) {
         pluginId: z.string(),
         operationId: z.string(),
         parameters: z.record(z.string(), z.unknown()).default({}),
+        readOnly: z.boolean().optional(),
       })
       .parse(req.input);
     if (!app.enabledPlugins?.includes(input.pluginId))
@@ -370,6 +373,7 @@ export async function dispatch(access: Access, raw: unknown) {
       input.pluginId,
       input.operationId,
       input.parameters,
+      input.readOnly,
     );
   }
   if (req.capability === "finance.calculate") return execute(release.bundle, req.input);

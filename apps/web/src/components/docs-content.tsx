@@ -30,7 +30,7 @@ export function OverviewContent() {
           variant="outline"
           onClick={() =>
             download(
-              "portfolio-example.cd80.json",
+              "portfolio-example.bundle.json",
               JSON.stringify(sampleBundle(protocols[0].defaultSpec), null, 2),
             )
           }
@@ -43,7 +43,7 @@ export function OverviewContent() {
         Getting started
       </Heading>
       <ol>
-        <li>Review and confirm a product specification.</li>
+        <li>Describe the app in a new conversation.</li>
         <li>Build an example, generate source with the model, or import a compatible bundle.</li>
         <li>Verification runs automatically before the app becomes active.</li>
         <li>Continue the conversation to change the app.</li>
@@ -79,10 +79,11 @@ export function SourceContent() {
   return (
     <>
       <p>
-        Upload one JSON source bundle with <code>manifest</code> and <code>files</code>, or select
-        the five files below together. The first prototype supports self-contained browser
-        applications and a pure JavaScript calculation module. It does not install packages or run
-        arbitrary server frameworks.
+        Upload a JSON bundle with <code>manifest</code> and <code>files</code>. The application
+        format contains a complete TanStack Start project with React, TypeScript and shadcn Nova.
+        The starter includes its actual package manifest, Vite configuration, router, routes, UI
+        components and typed platform SDK. The agent edits the project files and runs its normal
+        check and build commands in an isolated workspace.
       </p>
       <Table>
         <TableHeader>
@@ -93,44 +94,54 @@ export function SourceContent() {
         </TableHeader>
         <TableBody>
           <TableRow>
-            <TableCell className="whitespace-normal">cd80.json</TableCell>
+            <TableCell className="whitespace-normal">src/App.tsx</TableCell>
             <TableCell className="whitespace-normal">
-              Manifest with schemaVersion, name, protocol, permissions
+              The starter's application component. Its index route renders this component;
+              additional routes can render their own components.
             </TableCell>
           </TableRow>
           <TableRow>
-            <TableCell className="whitespace-normal">index.html</TableCell>
+            <TableCell className="whitespace-normal">src/routes/**/*.tsx</TableCell>
             <TableCell className="whitespace-normal">
-              Body fragment. No scripts, executable handlers, forms, embedded frames, or external
-              resources.
+              TanStack file routes, loaders and server functions. __root.tsx owns the document,
+              metadata and stylesheet links.
             </TableCell>
           </TableRow>
           <TableRow>
-            <TableCell className="whitespace-normal">app.js</TableCell>
+            <TableCell className="whitespace-normal">src/styles.css</TableCell>
             <TableCell className="whitespace-normal">
-              Browser JavaScript. May use top-level await. No module imports or remote scripts.
+              Optional app styles alongside generated Tailwind utilities and the supplied Nova
+              theme. External resources are unavailable.
             </TableCell>
           </TableRow>
           <TableRow>
-            <TableCell className="whitespace-normal">calculations.js</TableCell>
+            <TableCell className="whitespace-normal">src/components/ and src/lib/</TableCell>
             <TableCell className="whitespace-normal">
-              Self-contained ES module exporting analyze(input). Runs in a separate Worker.
+              Actual shadcn components, reusable capability components, app-specific modules and the
+              typed cd80 SDK.
             </TableCell>
           </TableRow>
           <TableRow>
-            <TableCell className="whitespace-normal">style.css</TableCell>
             <TableCell className="whitespace-normal">
-              App styling. Fonts and other external resources are unavailable.
+              package.json, vite.config.ts, tsconfig.json
+            </TableCell>
+            <TableCell className="whitespace-normal">
+              The real workspace package scripts, dependencies and framework configuration. These
+              files are visible in Code.
             </TableCell>
           </TableRow>
         </TableBody>
       </Table>
+      <p>
+        Bundle metadata stores the schema version, name, protocol and declared permissions. It is
+        not a workspace source file. The agent changes permissions with the set_permissions tool.
+      </p>
       <CodeBlock>
         <Pre>
           <code>
             {JSON.stringify(
               {
-                schemaVersion: 1,
+                schemaVersion: 3,
                 name: "My portfolio app",
                 protocol: "portfolio",
                 permissions: [
@@ -148,9 +159,12 @@ export function SourceContent() {
         </Pre>
       </CodeBlock>
       <p>
-        The upload limit is 250 KB. Imported updates must retain the app's existing protocol. Import
-        source while an app is selected to apply an update; choose New application first to create a
-        separate app.
+        Import stock shadcn primitives from <code>@/components/ui/*</code>, reusable capability
+        components from <code>@/components/capabilities</code>, and the typed SDK from
+        <code>@/lib/cd80</code>. Generated server code runs in an isolated process without platform
+        credentials or outbound networking. The preview serves the actual framework document and
+        modules; it is not a compiled JavaScript string embedded in the builder. Imported updates
+        retain the existing protocol and app data. Choose New chat to create a separate app.
       </p>
     </>
   );
@@ -159,24 +173,32 @@ export function SdkContent() {
   return (
     <>
       <p>
-        The host installs <code>window.cd80</code> before your app runs. Its calls use a validated
-        message bridge. Applications receive no model, database, or provider credentials.
+        Import typed capabilities from <code>@/lib/cd80</code>. The host provides an isolated
+        message bridge; applications receive no model, database or provider credentials.
       </p>
       <CodeBlock>
         <Pre>
-          <code>{`const inputs = await cd80.call("storage.read", { key: "inputs" });
-const result = await cd80.call("finance.calculate", inputs);
-document.getElementById("result").textContent = JSON.stringify(result);
-cd80.ready();
+          <code>{`import { cd80, portfolioInputSchema } from '@/lib/cd80';
 
-// Active verified apps may save shared inputs. Failed builds cannot write.
-await cd80.call("storage.write", { key: "inputs", value: inputs });`}</code>
+const inputs = await cd80.storage.read('inputs', portfolioInputSchema);
+if (inputs) {
+  const result = await cd80.finance.portfolio(inputs);
+  console.log(result.totalValue);
+}
+await cd80.storage.write('note', 'Saved by the active app');`}</code>
         </Pre>
       </CodeBlock>
       <p>
-        Calls return a Promise and reject on missing permissions, invalid data, or unavailable
-        services. Call <code>cd80.ready()</code> after rendering. Use DOM textContent or escape user
-        data before inserting HTML.
+        Import stock shadcn primitives from <code>@/components/ui/*</code>.
+        <code>@/components/capabilities</code> supplies MetricCard, DataTable, PluginPanel and
+        AIExplanationPanel. The starter's TanStack router provides TanStack Query; its root route
+        renders the document and reports readiness after hydration.
+      </p>
+      <p>
+        Calls return a Promise and reject on missing permissions, invalid data or unavailable
+        services. Unknown storage and plugin data becomes typed only after validation with the
+        caller's schema. The application can inspect the actual SDK and component source alongside
+        its routes, package manifest and configuration in Code.
       </p>
     </>
   );
@@ -267,11 +289,11 @@ export function VerificationContent() {
   return (
     <>
       <p>
-        Every build and source import checks its manifest, source syntax, required permissions,
-        potential embedded credentials, HTML isolation, exported calculation function, protocol
-        numerical fixture, boundary values, and invalid inputs. Calculation checks execute in
-        Miniflare/workerd in local and self-hosted modes, without provider secrets or outbound
-        network.
+        Every release runs the project's normal type checks and TanStack Start build in an isolated
+        workspace. Generated server code runs with an isolated filesystem and network, without
+        platform secrets. Source checks reject unsupported project files and embedded credentials.
+        Independent fixtures validate fixed financial capabilities. Failed checks leave the active
+        release and app data in place.
       </p>
       <p>
         These tests validate the published protocol contract. They do not certify every additional
@@ -315,10 +337,10 @@ export function ConversationContent() {
         leave the working site and data intact.
       </p>
       <p>
-        The workspace contains five self-contained browser-app files. The shell is isolated from
-        host files, secrets and networking, and is not a Node package-install environment.
-        Deployment runs the existing protocol and source checks before automatically activating the
-        site.
+        Workspaces contain real TanStack Start project files. The agent works on routes, components,
+        SDK calls and project configuration. Checks and builds run in an isolated process; browser
+        previews serve the framework through a scoped preview session. Successful releases activate
+        automatically.
       </p>
     </>
   );
@@ -338,14 +360,15 @@ export function PluginsContent() {
         server and are excluded from plugin metadata, tool results, and generated source.
       </p>
       <p>
-        The AI enables the selected plugin for an app and declares the plugin.call permission in
-        cd80.json. The generated app calls an exact registered operation through the browser SDK.
-        The server checks ownership, permissions and parameters, attaches authentication, and
-        returns JSON.
+        The AI enables the selected plugin for an app and declares the plugin.call permission
+        through the set_permissions tool. The generated app calls an exact registered operation
+        through the browser SDK. The server checks ownership, permissions and parameters, attaches
+        authentication, and returns JSON.
       </p>
       <CodeBlock>
         <Pre>
-          <code>{`const weather = await cd80.call("plugin.call", {
+          <code>{`import { cd80 } from '@/lib/cd80';
+const weather = await cd80.plugins.call({
   pluginId: "registered-plugin-id",
   operationId: "getWeather",
   parameters: { city: "London" }

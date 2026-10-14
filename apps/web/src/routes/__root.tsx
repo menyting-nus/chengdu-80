@@ -18,7 +18,7 @@ export interface RouterAppContext {
 
 export const Route = createRootRouteWithContext<RouterAppContext>()({
   // Every route reads the signed-in viewer from context; null when signed out.
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     const session = await auth.getSession();
 
     // SSR Convex queries run as the signed-in user.
@@ -26,9 +26,9 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       context.convexQueryClient?.serverHttpClient?.setAuth(session.accessToken);
     }
 
-    return { viewer: session.viewer };
+    return { viewer: session.viewer, standaloneApp: location.pathname.startsWith("/app/") };
   },
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
       {
         charSet: "utf-8",
@@ -42,7 +42,9 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       },
     ],
     links: [
-      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      ...(match.context.standaloneApp
+        ? []
+        : [{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }]),
       {
         rel: "stylesheet",
         href: appCss,

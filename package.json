@@ -30,10 +30,8 @@
     "setup:env": "bun scripts/setup-env.ts",
     "dev:hosted": "bun scripts/hosted.ts dev",
     "deploy:hosted": "bun scripts/hosted.ts deploy",
-    "test:prototype": "bun scripts/test-prototype.ts",
-    "test:flow": "bun scripts/test-flow.ts",
-    "test:model-contract": "bun scripts/test-model-contract.ts",
     "examples": "bun scripts/export-examples.ts",
+    "starter:sync": "bun scripts/sync-app-starter.ts",
     "dev": "vp run -r --parallel dev",
     "dev:web": "vp run --filter web dev",
     "dev:server": "vp run --filter @web-starter/backend dev",
@@ -44,13 +42,8 @@
     "fix": "vp check --fix",
     "docker:build": "docker build -t chengdu80-web -f apps/web/Dockerfile .",
     "setup:selfhosted": "bash scripts/setup-selfhosted.sh",
-    "test:demo": "bun scripts/test-demo.ts",
-    "test:glm-contract": "bun scripts/test-glm-contract.ts",
-    "test:query-stream": "bun --conditions=development scripts/test-query-stream.ts",
     "deploy:backend": "bun scripts/convex.ts push",
-    "test:ui": "VITE_LOCAL_MODE=1 bun run build && bun scripts/test-ui.ts",
-    "test:agent": "VITE_LOCAL_MODE=1 bun run build && bun scripts/test-agent.ts",
-    "test:plugins": "VITE_LOCAL_MODE=1 bun run build && bun scripts/test-plugins.ts"
+    "dev:convex": "bun scripts/dev-convex.ts"
   },
   "dependencies": {
     "@web-starter/env": "workspace:*",
@@ -60,7 +53,6 @@
     "@types/node": "^22.13.14",
     "@web-starter/config": "workspace:*",
     "convex": "catalog:",
-    "playwright": "^1.64.0",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"

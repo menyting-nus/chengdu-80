@@ -15,14 +15,14 @@ export const documentation = [
     slug: "source",
     title: "Source format",
     navigation: "Source format",
-    description: "Bundle structure, permissions, and import limits.",
+    description: "React/TSX starter, permissions and import limits.",
     toc: [],
   },
   {
     slug: "sdk",
     title: "Browser SDK",
     navigation: "Browser SDK",
-    description: "Call platform capabilities from isolated applications.",
+    description: "Typed React capabilities and the isolated browser message bridge.",
     toc: [],
   },
   {

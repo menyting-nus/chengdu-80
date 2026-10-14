@@ -9,10 +9,26 @@ import {
 import { Markdown, type MarkdownComponents } from "@tanstack/markdown/react";
 import { streamingMarkdownExtension } from "@tanstack/markdown/extensions/streaming";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useChat, type ChatFetcher, type UIMessage } from "@tanstack/ai-react";
-import { ArrowUp, Check, ChevronRight, Copy, Square, Terminal, Upload, X } from "lucide-react";
+import {
+  useChat,
+  fetchServerSentEvents,
+  type ChatFetcher,
+  type UIMessage,
+} from "@tanstack/ai-react";
+import {
+  ArrowUp,
+  Check,
+  ChevronRight,
+  Copy,
+  Hammer,
+  Square,
+  Terminal,
+  Upload,
+  X,
+} from "lucide-react";
 import { Separator } from "@web-starter/ui/components/separator";
 import { Button } from "@web-starter/ui/components/button";
+import { cn } from "@web-starter/ui/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@web-starter/ui/components/alert";
 import { Bubble, BubbleContent } from "@web-starter/ui/components/bubble";
 import {
@@ -43,6 +59,8 @@ import {
   MessageScrollerButton,
 } from "@web-starter/ui/components/message-scroller";
 import { api } from "../lib/client";
+import { useRouter } from "@tanstack/react-router";
+import { api as convexApi } from "@web-starter/backend/convex/_generated/api";
 import { protocols, type Application, type ProductSpec } from "../lib/contracts";
 
 const streamingExtensions = [streamingMarkdownExtension()];
@@ -62,6 +80,8 @@ const markdownComponents = {
 
 type AgentChatProps = {
   app: Application | null;
+  reactive?: boolean;
+  messagesReady?: boolean;
   connected: boolean;
   disabled: boolean;
   modelName: string;
@@ -74,6 +94,22 @@ type AgentChatProps = {
 
 type Part = UIMessage["parts"][number];
 type ToolPart = Extract<Part, { type: "tool-call" }>;
+type ToolGroup = { type: "tool-group"; calls: ToolPart[] };
+
+// Keep each uninterrupted run of tools in one bucket between assistant text.
+function groupToolParts(parts: Part[]) {
+  const grouped: (Part | ToolGroup)[] = [];
+  for (const part of parts) {
+    if (part.type === "tool-call") {
+      const previous = grouped.at(-1);
+      if (previous?.type === "tool-group") previous.calls.push(part);
+      else grouped.push({ type: "tool-group", calls: [part] });
+    } else if ((part.type === "text" || part.type === "thinking") && part.content) {
+      grouped.push(part);
+    }
+  }
+  return grouped;
+}
 
 function inspect(value: unknown) {
   const text = typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "");
@@ -171,6 +207,42 @@ function CopyAnswer({ text }: { text: string }) {
   );
 }
 
+function ToolActivityGroup({
+  calls,
+  results,
+}: {
+  calls: ToolPart[];
+  results: Map<string, Extract<Part, { type: "tool-result" }>>;
+}) {
+  const running = calls.find(
+    (call) =>
+      call.state !== "complete" &&
+      call.state !== "error" &&
+      results.get(call.id)?.state !== "complete" &&
+      results.get(call.id)?.state !== "error",
+  );
+  return (
+    <Collapsible className="min-w-0">
+      <CollapsibleTrigger
+        render={<Button variant="link" size="sm" className="h-auto justify-start p-0" />}
+        aria-label={`Tool activity: ${calls.length} ${calls.length === 1 ? "call" : "calls"}`}
+      >
+        <Hammer data-icon="inline-start" />
+        <span className="min-w-0 truncate">
+          {running ? `${running.name.replaceAll("_", " ")} · ` : ""}
+          {calls.length} {calls.length === 1 ? "tool call" : "tool calls"}
+        </span>
+        <ChevronRight data-icon="inline-end" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="min-w-0 py-2">
+        {calls.map((call) => (
+          <ToolActivity key={call.id} part={call} result={results.get(call.id)} />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 function ConversationMessage({
   message,
   results,
@@ -185,9 +257,7 @@ function ConversationMessage({
     .filter((part) => part.type === "text")
     .map((part) => part.content)
     .join("\n\n");
-  const visibleParts = message.parts.filter(
-    (part) => part.type === "text" || part.type === "tool-call" || part.type === "thinking",
-  );
+  const visibleParts = groupToolParts(message.parts);
   if (!visibleParts.length) return null;
   return (
     <Message align={user ? "end" : "start"}>
@@ -217,8 +287,10 @@ function ConversationMessage({
                 </BubbleContent>
               </Bubble>
             ) : null;
-          if (part.type === "tool-call")
-            return <ToolActivity key={part.id} part={part} result={results.get(part.id)} />;
+          if (part.type === "tool-group")
+            return (
+              <ToolActivityGroup key={part.calls[0]!.id} calls={part.calls} results={results} />
+            );
           if (part.type === "thinking" && part.content)
             return (
               <Collapsible key={index}>
@@ -341,7 +413,7 @@ function ConversationTurn({
 
 // The component keeps its identity when the first prompt creates its workspace.
 // Remount it only when the user explicitly switches to another conversation.
-export function AgentChat(props: AgentChatProps) {
+function LocalAgentChat(props: AgentChatProps) {
   const callbacks = useRef(props);
   callbacks.current = props;
   const appId = useRef(props.app?.id);
@@ -385,7 +457,8 @@ export function AgentChat(props: AgentChatProps) {
     fetcher,
     initialMessages: initialMessages.current,
     onChunk: (chunk) => {
-      if (chunk.type === "TOOL_CALL_RESULT") void callbacks.current.onFinish();
+      if (!callbacks.current.reactive && chunk.type === "TOOL_CALL_RESULT")
+        void callbacks.current.onFinish();
     },
     onFinish: () => {
       void Promise.resolve(callbacks.current.onFinish()).catch((error: unknown) =>
@@ -399,7 +472,11 @@ export function AgentChat(props: AgentChatProps) {
   }, [chat.isLoading]);
   const submit = () => {
     const text = prompt.trim();
-    if (!text || chat.isLoading || props.disabled || !props.connected) return;
+    if (!text || props.disabled || !props.connected) return;
+    if (chat.isLoading) {
+      setStoppedTurn(conversationTurns(chat.messages).at(-1)?.user.id);
+      chat.stop();
+    }
     setPrompt("");
     setLocalError(undefined);
     void chat
@@ -408,16 +485,211 @@ export function AgentChat(props: AgentChatProps) {
         setLocalError(error instanceof Error ? error.message : "Could not send message"),
       );
   };
+  return (
+    <AgentChatView
+      props={props}
+      prompt={prompt}
+      setPrompt={setPrompt}
+      messages={chat.messages}
+      loading={chat.isLoading}
+      error={localError ?? chat.error?.message}
+      submit={submit}
+      stoppedTurn={stoppedTurn}
+      stop={() => {
+        setStoppedTurn(conversationTurns(chat.messages).at(-1)?.user.id);
+        chat.stop();
+        void callbacks.current.onFinish();
+      }}
+    />
+  );
+}
+
+// Convex owns the transcript. This transport consumes SSE only for lifecycle and
+// errors; it deliberately keeps no second message buffer for the sending tab.
+function ConvexAgentChat(props: AgentChatProps) {
+  const client = useRouter().options.context.convexClient!;
+  const callbacks = useRef(props);
+  callbacks.current = props;
+  const appId = useRef(props.app?.id);
+  if (props.app?.id) appId.current = props.app.id;
+  const controller = useRef<AbortController | null>(null);
+  const requestedTurn = useRef<string | undefined>(undefined);
+  const [prompt, setPrompt] = useState("");
+  const [requesting, setRequesting] = useState(false);
+  const [error, setError] = useState<string>();
+  const active = props.app?.agentTurn;
+  const loading = requesting || active?.status === "running" || active?.status === "queued";
+  useEffect(() => {
+    if (active?.status === "stopped" && active.id === requestedTurn.current) {
+      controller.current?.abort();
+      setRequesting(false);
+    }
+  }, [active?.id, active?.status]);
+  useEffect(() => {
+    callbacks.current.onBusyChange?.(loading);
+    return () => callbacks.current.onBusyChange?.(false);
+  }, [loading]);
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      if (appId.current && requestedTurn.current) {
+        void client
+          .mutation(convexApi.platform.stopTurn, {
+            appId: appId.current,
+            turnId: requestedTurn.current,
+          })
+          .catch(() => undefined);
+      }
+    },
+    [client],
+  );
+  async function submit() {
+    const content = prompt.trim();
+    if (!content || props.disabled || !props.connected) return;
+    if (requesting && !appId.current) return;
+    // Existing threads hydrate after the initial status-only page bootstrap.
+    // Read their subscribed identity before deciding to create a new workspace.
+    appId.current = callbacks.current.app?.id ?? appId.current;
+    // Interrupt this tab's transport; Convex atomically records the replacement
+    // turn and Node waits for the previous writer to finish before continuing.
+    controller.current?.abort();
+    const abort = new AbortController();
+    controller.current = abort;
+    setRequesting(true);
+    setError(undefined);
+    const messageId = crypto.randomUUID();
+    requestedTurn.current = messageId;
+    try {
+      if (!appId.current) {
+        const workspace = await client.mutation(convexApi.platform.createWorkspace, {
+          appId: crypto.randomUUID(),
+          prompt: content,
+          messageId,
+        });
+        appId.current = workspace.id;
+        callbacks.current.onWorkspaceCreated(workspace);
+      } else {
+        await client.mutation(convexApi.platform.sendMessage, {
+          appId: appId.current,
+          messageId,
+          content,
+        });
+      }
+      setPrompt("");
+      if (abort.signal.aborted) {
+        await client.mutation(convexApi.platform.stopTurn, {
+          appId: appId.current!,
+          turnId: messageId,
+        });
+        return;
+      }
+      const message: UIMessage = {
+        id: messageId,
+        role: "user",
+        parts: [{ type: "text", content }],
+      };
+      const stream = fetchServerSentEvents("/api/ai/chat", {
+        // Keep the existing Node request contract; the adapter otherwise emits
+        // AG-UI wire messages and nests appId inside forwardedProps.
+        fetchClient: async (url, options) => {
+          const response = await fetch(url, {
+            ...options,
+            body: JSON.stringify({ appId: appId.current, messages: [message] }),
+          });
+          if (!response.ok) {
+            const body: unknown = await response.json().catch(() => null);
+            const detail =
+              typeof body === "object" &&
+              body !== null &&
+              "error" in body &&
+              typeof body.error === "string"
+                ? body.error
+                : `Chat request failed (${response.status})`;
+            throw new Error(detail);
+          }
+          return response;
+        },
+      });
+      for await (const chunk of stream.connect([message], undefined, abort.signal)) {
+        if (chunk.type === "RUN_ERROR") throw new Error(chunk.message);
+      }
+    } catch (cause) {
+      if (!abort.signal.aborted)
+        setError(cause instanceof Error ? cause.message : "Could not send message");
+      // A failed connection must not leave its persisted queued turn locked.
+      if (appId.current) {
+        await client
+          .mutation(convexApi.platform.stopTurn, { appId: appId.current, turnId: messageId })
+          .catch(() => undefined);
+      }
+    } finally {
+      if (controller.current === abort) {
+        controller.current = null;
+        requestedTurn.current = undefined;
+        setRequesting(false);
+      }
+    }
+  }
+  async function stop() {
+    const turnId = active?.id ?? requestedTurn.current;
+    if (!turnId) return;
+    try {
+      if (appId.current)
+        await client.mutation(convexApi.platform.stopTurn, { appId: appId.current, turnId });
+      controller.current?.abort();
+      setRequesting(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not stop generation");
+    }
+  }
+  return (
+    <AgentChatView
+      props={props}
+      prompt={prompt}
+      setPrompt={setPrompt}
+      messages={props.app?.conversation ?? []}
+      loading={loading}
+      error={error}
+      submit={() => void submit()}
+      stop={() => void stop()}
+    />
+  );
+}
+
+export function AgentChat(props: AgentChatProps) {
+  return props.reactive ? <ConvexAgentChat {...props} /> : <LocalAgentChat {...props} />;
+}
+
+function AgentChatView({
+  props,
+  prompt,
+  setPrompt,
+  messages,
+  loading,
+  error,
+  submit,
+  stop,
+  stoppedTurn,
+}: {
+  props: AgentChatProps;
+  prompt: string;
+  setPrompt: (text: string) => void;
+  messages: UIMessage[];
+  loading: boolean;
+  error?: string;
+  submit: () => void;
+  stop: () => void;
+  stoppedTurn?: string;
+}) {
   const results = new Map<string, Extract<Part, { type: "tool-result" }>>();
-  for (const message of chat.messages)
+  for (const message of messages)
     for (const part of message.parts)
       if (part.type === "tool-result") results.set(part.toolCallId, part);
-  const error = localError ?? chat.error?.message;
-  const turns = conversationTurns(chat.messages);
+  const turns = conversationTurns(messages);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4" aria-label="Conversation">
       <div className="min-h-40 min-w-0 flex-1 md:min-h-0">
-        {chat.messages.length ? (
+        {messages.length ? (
           <MessageScrollerProvider autoScroll>
             <MessageScroller>
               <MessageScrollerViewport>
@@ -426,7 +698,13 @@ export function AgentChat(props: AgentChatProps) {
                     <MessageScrollerItem key={turn.user.id} messageId={turn.user.id} scrollAnchor>
                       <ConversationTurn
                         turn={turn}
-                        active={chat.isLoading && index === turns.length - 1}
+                        active={
+                          index === turns.length - 1 &&
+                          (loading ||
+                            (props.reactive === true &&
+                              props.app?.agentTurn?.id === turn.user.id &&
+                              ["queued", "running"].includes(props.app.agentTurn.status)))
+                        }
                         timing={props.app?.turns?.find((run) => run.id === turn.user.id)}
                         results={results}
                         stopped={turn.user.id === stoppedTurn}
@@ -451,7 +729,7 @@ export function AgentChat(props: AgentChatProps) {
                   <Button
                     key={protocol.id}
                     variant="outline"
-                    disabled={props.disabled || chat.isLoading}
+                    disabled={props.disabled || loading}
                     onClick={() => props.onExample({ ...protocol.defaultSpec })}
                   >
                     {protocol.name}
@@ -498,22 +776,20 @@ export function AgentChat(props: AgentChatProps) {
               <Upload />
             </InputGroupButton>
             <span className="min-w-0 truncate text-xs">{props.modelName}</span>
-            {chat.isLoading ? (
+            {loading && (
               <InputGroupButton
                 className="ml-auto"
                 size="icon-sm"
+                variant="destructive"
                 aria-label="Stop generation"
-                onClick={() => {
-                  setStoppedTurn(turns.at(-1)?.user.id);
-                  chat.stop();
-                  void callbacks.current.onFinish();
-                }}
+                onClick={stop}
               >
                 <Square />
               </InputGroupButton>
-            ) : (
+            )}
+            {(!loading || !!prompt.trim()) && (
               <InputGroupButton
-                className="ml-auto"
+                className={cn(!loading && "ml-auto")}
                 size="icon-sm"
                 variant="default"
                 aria-label="Send message"

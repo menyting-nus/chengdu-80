@@ -3,6 +3,7 @@
 // Copyright (c) 2025 Cloudflare. License: third-party/vibesdk.LICENSE.
 import * as monaco from "monaco-editor/editor/editor.api";
 import "monaco-editor/languages/definitions/javascript/register.js";
+import "monaco-editor/languages/definitions/typescript/register.js";
 import "monaco-editor/languages/definitions/css/register.js";
 import "monaco-editor/languages/definitions/html/register.js";
 import "monaco-editor/language/json/monaco.contribution";
@@ -23,13 +24,15 @@ export function mountSourceViewer(
   fileName: string,
   content: string,
 ) {
-  const language = fileName.endsWith(".json")
-    ? "json"
-    : fileName.endsWith(".css")
-      ? "css"
-      : fileName.endsWith(".html")
-        ? "html"
-        : "javascript";
+  const language = /\.(?:tsx?|mts)$/.test(fileName)
+    ? "typescript"
+    : fileName.endsWith(".json") || fileName.endsWith("bun.lock")
+      ? "json"
+      : fileName.endsWith(".css")
+        ? "css"
+        : fileName.endsWith(".html")
+          ? "html"
+          : "javascript";
   const model = monaco.editor.createModel(
     content,
     language,

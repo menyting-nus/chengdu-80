@@ -7,7 +7,13 @@ import { auth } from "../integrations/auth";
 export default function Header() {
   const { viewer } = useRouteContext({ from: "__root__" });
   const { pathname } = useLocation();
-  if (pathname === "/" || pathname === "/docs" || pathname.startsWith("/docs/")) return null;
+  if (
+    pathname === "/" ||
+    pathname === "/docs" ||
+    pathname.startsWith("/docs/") ||
+    pathname.startsWith("/app/")
+  )
+    return null;
   const links = [
     { to: "/", label: "Workspace" },
     { to: "/docs", label: "Developer docs" },

@@ -1,7 +1,11 @@
 import { AgentChat } from "./agent-chat";
 import { ConversationNavigation } from "./conversation-navigation";
 import { PluginSettings } from "./plugin-settings";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "@tanstack/react-router";
+import type { UIMessage } from "@tanstack/ai-react";
+import { api as convexApi } from "@web-starter/backend/convex/_generated/api";
+import { StudioSubscriptions } from "../lib/use-studio-data";
 import {
   ArrowUpRight,
   Eye,
@@ -82,12 +86,28 @@ const workspaceTabs = [
   { value: "data", label: "Database (read-only)", Icon: Database },
 ] as const;
 export function Studio() {
+  const convexClient = useRouter().options.context.convexClient;
+  const convexConfigured = !!convexClient;
+  const [subscribedThreads, setSubscribedThreads] =
+    useState<Pick<Application, "id" | "name" | "chatTitle">[]>();
+  const [subscribedApp, setSubscribedApp] = useState<{ appId: string; app: Application | null }>();
+  const receiveApp = useCallback((appId: string, app: Application | null) => {
+    setSubscribedApp({ appId, app });
+  }, []);
+  const [subscribedMessages, setSubscribedMessages] = useState<{
+    appId: string;
+    messages: UIMessage[];
+  }>();
+  const receiveMessages = useCallback((appId: string, messages: UIMessage[]) => {
+    setSubscribedMessages({ appId, messages });
+  }, []);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const reactive = convexConfigured && snapshot?.status.local !== true;
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("preview");
-  const [activeSourceFile, setActiveSourceFile] = useState<SourcePath>("app.js");
+  const [activeSourceFile, setActiveSourceFile] = useState<SourcePath>("src/routes/index.tsx");
   const [review, setReview] = useState<"checks" | "spec" | null>(null);
   const [imported, setImported] = useState<AppBundle | null>(null);
   const [providerResult, setProviderResult] = useState<unknown>(null);
@@ -111,11 +131,34 @@ export function Studio() {
       setError("Fullscreen could not open.");
     }
   }
-  const app = snapshot?.apps.find((a) => a.id === selected) ?? null;
+  const apps = subscribedThreads ?? snapshot?.apps ?? [];
+  const fallbackApp = snapshot?.apps.find((a) => a.id === selected) ?? null;
+  const selectedApp =
+    reactive && subscribedApp?.appId === selected ? subscribedApp.app : fallbackApp;
+  const messagesReady =
+    !reactive || !selected || (!!selectedApp && subscribedMessages?.appId === selected);
+  const app =
+    selectedApp && reactive
+      ? {
+          ...selectedApp,
+          conversation:
+            subscribedMessages?.appId === selected ? subscribedMessages.messages : undefined,
+        }
+      : selectedApp;
   const release = app && (app.current ?? app.preview);
   const workspaceBundle = app?.workspace ?? release?.bundle;
+  useEffect(() => {
+    setActiveSourceFile("src/routes/index.tsx");
+  }, [app?.id]);
+  const displaySourceFile =
+    workspaceBundle &&
+    (Object.hasOwn(workspaceBundle.files, activeSourceFile) ||
+      activeSourceFile.startsWith("starter/"))
+      ? activeSourceFile
+      : "src/routes/index.tsx";
   const refreshVersion = useRef(0);
   async function refresh() {
+    if (reactive && snapshot) return snapshot;
     const version = ++refreshVersion.current;
     const data = await api<Snapshot>();
     if (version === refreshVersion.current) setSnapshot(data);
@@ -123,12 +166,12 @@ export function Studio() {
   }
   useEffect(() => {
     let mounted = true;
-    api<Snapshot>()
+    api<Snapshot>(undefined, { statusOnly: reactive })
       .then((data) => {
         if (!mounted) return;
         setSnapshot(data);
         const id = new URLSearchParams(window.location.hash.slice(1)).get("app");
-        if (id && data.apps.some((a) => a.id === id)) {
+        if (id && (reactive || data.apps.some((a) => a.id === id))) {
           setSelected(id);
           setChatKey(id);
         }
@@ -139,7 +182,7 @@ export function Studio() {
     };
   }, []);
   useEffect(() => {
-    if (!app || app.chatTitle !== "New chat") return;
+    if (reactive || !app || app.chatTitle !== "New chat") return;
     let stopped = false;
     let attempts = 0;
     const timer = setInterval(() => {
@@ -155,17 +198,23 @@ export function Studio() {
       stopped = true;
       clearInterval(timer);
     };
-  }, [app?.id, app?.chatTitle]);
-  function select(id: string | null) {
+  }, [reactive, app?.id, app?.chatTitle]);
+  const select = useCallback((id: string | null) => {
     setSelected(id);
     setImported(null);
     setError("");
     setChatKey(id ?? crypto.randomUUID());
     setTab("preview");
     setReview(null);
-    setActiveSourceFile("app.js");
+    setActiveSourceFile("src/routes/index.tsx");
     window.history.replaceState(null, "", id ? `/#app=${id}` : "/");
-  }
+  }, []);
+  useEffect(() => {
+    // Another tab can delete the selected thread while this tab is open.
+    if (reactive && selected && subscribedApp?.appId === selected && subscribedApp.app === null) {
+      select(null);
+    }
+  }, [reactive, selected, subscribedApp, select]);
   async function run<T>(label: string, task: () => Promise<T>) {
     if (busy || agentBusy) return;
     setBusy(label);
@@ -194,23 +243,9 @@ export function Studio() {
         Array.from(files).reduce((n, f) => n + f.size, 0) > 250000
       )
         throw new Error("Source upload exceeds 250 KB.");
-      let bundle;
-      if (files.length === 1 && files[0].name.endsWith(".json"))
-        bundle = JSON.parse(await files[0].text());
-      else {
-        const entries = await Promise.all(
-          Array.from(files).map(async (f) => [f.name, await f.text()] as const),
-        );
-        const map = Object.fromEntries(entries);
-        if (!map["cd80.json"])
-          throw new Error(
-            "Select cd80.json, index.html, app.js, calculations.js, and style.css together.",
-          );
-        bundle = {
-          manifest: JSON.parse(map["cd80.json"]),
-          files: Object.fromEntries(entries.filter(([name]) => name !== "cd80.json")),
-        };
-      }
+      if (files.length !== 1 || !files[0].name.endsWith(".json"))
+        throw new Error("Upload one JSON source bundle containing React/TSX files and metadata.");
+      const bundle: unknown = JSON.parse(await files[0].text());
       setImported(bundleSchema.parse(bundle));
     });
     if (file.current) file.current.value = "";
@@ -229,12 +264,29 @@ export function Studio() {
       className="h-svh min-h-0 overflow-hidden"
       style={{ "--sidebar-width": "16rem" } as React.CSSProperties}
     >
+      {reactive && snapshot && (
+        <StudioSubscriptions
+          selected={selected}
+          demo={snapshot.status.demo}
+          onThreads={setSubscribedThreads}
+          onApp={receiveApp}
+          onMessages={receiveMessages}
+        />
+      )}
       <ConversationNavigation
-        apps={snapshot?.apps ?? []}
+        apps={apps}
         selected={selected}
         select={select}
         busy={!!busy || agentBusy}
         openSettings={() => setSettingsOpen(true)}
+        deleteThread={
+          reactive
+            ? async (appId) => {
+                await convexClient!.mutation(convexApi.platform.deleteThread, { appId });
+                if (selected === appId) select(null);
+              }
+            : undefined
+        }
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
@@ -249,7 +301,7 @@ export function Studio() {
                 size="sm"
                 onClick={() =>
                   download(
-                    `${app!.name.replaceAll(/[^a-zA-Z0-9]/g, "-")}.cd80.json`,
+                    `${app!.name.replaceAll(/[^a-zA-Z0-9]/g, "-")}.bundle.json`,
                     JSON.stringify(release.bundle, null, 2),
                   )
                 }
@@ -307,8 +359,16 @@ export function Studio() {
             <AgentChat
               key={chatKey}
               app={app}
+              reactive={reactive}
+              messagesReady={messagesReady}
               connected={!!snapshot?.status.modelConfigured}
-              disabled={!!busy}
+              disabled={
+                !!busy ||
+                !messagesReady ||
+                (reactive &&
+                  ["queued", "running"].includes(app?.agentTurn?.status ?? "") &&
+                  !agentBusy)
+              }
               modelName={snapshot?.status.model ?? "AI"}
               onBusyChange={setAgentBusy}
               onImport={() => file.current?.click()}
@@ -338,8 +398,7 @@ export function Studio() {
             <input
               ref={file}
               type="file"
-              accept=".json,.html,.js,.css"
-              multiple
+              accept=".json"
               hidden
               onChange={(e) => void importFiles(e.target.files)}
             />
@@ -415,9 +474,9 @@ export function Studio() {
                   <div className="flex min-w-0 items-center justify-center gap-2">
                     <span
                       className="truncate text-sm font-mono"
-                      title={tab === "source" ? activeSourceFile : app.name}
+                      title={tab === "source" ? displaySourceFile : app.name}
                     >
-                      {tab === "source" ? activeSourceFile : app.name}
+                      {tab === "source" ? displaySourceFile : app.name}
                     </span>
                     {tab !== "source" && (
                       <Button
@@ -497,7 +556,7 @@ export function Studio() {
                     <CodeWorkspace
                       bundle={workspaceBundle}
                       workspaceId={`${app.id}:${app.revision}`}
-                      activeFile={activeSourceFile}
+                      activeFile={displaySourceFile}
                       onSelectFile={setActiveSourceFile}
                     />
                   )}

@@ -1,5 +1,6 @@
 import type { UIMessage } from "@tanstack/ai";
 import { z } from "zod";
+import { isProjectFile } from "./project-files";
 
 export const capabilities = [
   "market.prices",
@@ -33,7 +34,7 @@ export const capabilityContracts = {
   },
   "finance.calculate": {
     input: "Selected protocol input object",
-    output: "Your calculations.js analyze(input) result",
+    output: "Verified built-in result for the selected financial protocol",
   },
   "finance.portfolio": {
     input:
@@ -78,7 +79,7 @@ export const bundleSchema = z
   .object({
     manifest: z
       .object({
-        schemaVersion: z.literal(1),
+        schemaVersion: z.literal(3),
         name: z.string().min(3).max(80),
         protocol: z.enum(protocolIds),
         permissions: z.array(z.enum(capabilities)).max(10),
@@ -86,14 +87,29 @@ export const bundleSchema = z
       .strict(),
     files: z
       .object({
-        "index.html": z.string().min(20).max(60000),
-        "app.js": z.string().min(10).max(60000),
-        "calculations.js": z.string().min(10).max(30000),
-        "style.css": z.string().max(30000),
+        "package.json": z.string().min(1).max(60000),
+        "vite.config.ts": z.string().min(1).max(60000),
+        "tsconfig.json": z.string().min(1).max(60000),
       })
-      .strict(),
+      .catchall(z.string().max(60000)),
   })
-  .strict();
+  .strict()
+  .superRefine((bundle, ctx) => {
+    const paths = Object.keys(bundle.files);
+    for (const path of paths) {
+      if (!isProjectFile(path))
+        ctx.addIssue({ code: "custom", path: ["files", path], message: "Unsupported source path" });
+    }
+    if (
+      paths.length > 200 ||
+      Object.values(bundle.files).reduce((size, content) => size + content.length, 0) > 200000
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["files"],
+        message: "Source bundle exceeds 200 files or 200 KB",
+      });
+  });
 export type AppBundle = z.infer<typeof bundleSchema>;
 export type Check = { name: string; passed: boolean; detail: string };
 export type Verification = {
@@ -133,13 +149,13 @@ export type Application = {
     id: string;
     startedAt: string;
     completedAt?: string;
-    status: "running" | "complete" | "stopped" | "error";
+    status: "queued" | "running" | "complete" | "stopped" | "error";
   }[];
   agentTurn?: {
     id: string;
     startedAt: string;
     completedAt?: string;
-    status: "running" | "complete" | "stopped" | "error";
+    status: "queued" | "running" | "complete" | "stopped" | "error";
   };
 };
 export type Protocol = {
