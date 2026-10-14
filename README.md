@@ -21,7 +21,7 @@ Generation runs through TanStack AI on the Node server after it claims a saved q
 
 Agent runs have no overall time or iteration cap. Stop cancels a run; sending another message interrupts it and continues from the saved conversation and workspace. The previous writer finishes before the replacement starts. Individual shell/build commands retain resource limits. Consecutive tool calls appear in one expandable activity group between assistant text messages.
 
-`bun run dev:local` remains an explicit file-backed prototype launcher for isolated fixture tests. It does not use Convex.
+`bun run dev:local` remains an explicit file-backed prototype launcher for local development. It does not use Convex.
 
 The launcher reads `apps/web/.env`, root `.env`, then the workspace `../.env`. Non-empty workspace values take precedence. Secrets stay server-side.
 
@@ -48,7 +48,7 @@ Portfolio, screening and strategy protocols are provisional feasibility examples
 
 Public docs: `/docs` and `/api/docs`. Each new app is an actual TanStack Start project, with `package.json`, `vite.config.ts`, `tsconfig.json`, routes, router, Tailwind stylesheet, local shadcn Nova components and a typed SDK. The agent edits these files through source tools and real Bash commands. The Code tree shows only actual app files, including its framework configuration; platform runner internals stay outside the app.
 
-The finance starter preinstalls TanStack Charts, Table, Form, Virtual, Query and AI/AI React, plus Decimal.js, date-fns, Papa Parse and D3 time scales. Its README records version-specific APIs; `read_starter_reference` exposes that guide and pinned package versions to the builder. Stock shadcn controls are included as source. Run `bun run starter:sync` after editing the starter files, then regenerate examples and Convex bindings.
+The finance starter preinstalls TanStack Charts, Table, Form, Virtual, Query and AI/AI React, plus Decimal.js, date-fns, Papa Parse and D3 time scales. Its README records version-specific APIs; `read_starter_reference` exposes that guide and pinned package versions to the builder. Stock shadcn controls are included as source. Run `bun run starter:sync` after editing the starter files, then regenerate Convex bindings.
 
 Standalone `/app/:appId` pages show only the application. Their server-rendered title, description, Open Graph/Twitter tags and canonical URL come from the active specification; the favicon comes from the app's public SVG or its initial. The builder also maintains metadata in the generated app's root route.
 
@@ -58,28 +58,19 @@ Generated configuration, build scripts and server code run inside Bubblewrap use
 
 Previews use signed, short-lived, owner-scoped URLs through a Unix-socket proxy. Platform cookies and authorization are stripped before forwarding to the app. An opaque iframe and restrictive CSP keep the existing permission-checked browser SDK bridge: plugin credentials and financial/storage/AI operations remain on the platform. Financial capabilities use trusted functions. Browser logs return to the conversation.
 
-Passing project builds activate automatically; failed builds retain the working release and saved data. Source hashes bind checks to the exact project snapshot. Browser E2E checks separately validate hydration, routes, server functions, SDK calls and runtime isolation. The full framework workspace supersedes the earlier source-bundle compiler; legacy project formats are unsupported.
+Passing project builds activate automatically; failed builds retain the working release and saved data. Source hashes bind checks to the exact project snapshot. The full framework workspace supersedes the earlier source-bundle compiler; legacy project formats are unsupported.
 
 Nine capabilities cover normalized market data, reusable financial functions, custom calculations, shared storage and managed AI. New providers require adapters. `_provenance` is reserved; edited inputs are labelled user-entered. AI explanations use server-recomputed saved inputs.
 
 ## Verification
 
-With the local Convex-backed dev server running and an existing generated conversation, `bun run test:convex` checks normalized storage, migration, access checks, direct mutations, reactive messages across two Chrome tabs, transport failure recovery and thread deletion. It also verifies that client-bound SSE text cannot override the Convex transcript. It makes one live model call and writes screenshots/results to `.local/convex-tests/`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when using an existing Chrome installation.
-
 ```bash
-bun scripts/test-tsx.ts      # Actual framework SSR, server functions, isolation and browser E2E; build first
-bun run test:prototype       # Fixed financial functions, source hash/policy and persistence checks
-bun run test:flow            # 11 HTTP lifecycle checks on temporary data
-bun run test:model-contract  # 3 mock Responses transport checks, not live inference
-bun run test:glm-contract    # 10 mock GLM format/recovery/deadline checks
-bun run test:query-stream    # 2 query-stream hydration regressions
+bun run codegen             # Requires configured Convex deployment
 bun run check
 bun run build
-bun run codegen             # Requires configured Convex deployment
-bun run deploy:backend      # Loads workspace credentials; development deployments only
 ```
 
-Lifecycle tests do not modify workspace apps. `bun run examples` regenerates bundles, split source, schemas and protocol instructions.
+`bun run examples` exports complete source bundles, schemas and protocol instructions to ignored `.local/examples/`. Documentation downloads assemble examples from the shared starter at runtime.
 
 ## Self-hosted deployment
 
@@ -122,4 +113,4 @@ The supplied token and Workers upgrade were sufficient. Deployment from China us
 - `packages/backend/convex`: hosted account-owned storage
 - `apps/web/Dockerfile`, `docker-compose.yml`: self-hosted Node build and deployment stack
 - `scripts`: launchers, credential checks, exports and verification
-- `patches`: persisted TanStack query-stream fix; `bun run test:query-stream` checks closed-stream hydration. GLM malformed JSON gets one format recovery within its existing deadline, checked by `bun run test:glm-contract`.
+- `patches`: persisted TanStack query-stream fix for closed-stream hydration.

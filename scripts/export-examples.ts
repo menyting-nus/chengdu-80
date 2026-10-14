@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { bundleSchema, capabilityContracts, protocols } from "../apps/web/src/lib/contracts";
 import { protocolInstructions, sampleBundle } from "../apps/web/src/lib/samples";
 import { z } from "zod";
-const dir = fileURLToPath(new URL("../examples", import.meta.url).href);
+const dir = fileURLToPath(new URL("../.local/examples", import.meta.url).href);
 await mkdir(dir, { recursive: true });
 for (const p of protocols) {
   const bundle = sampleBundle(p.defaultSpec);
@@ -29,5 +29,5 @@ await writeFile(
   JSON.stringify(capabilityContracts, null, 2) + "\n",
 );
 console.log(
-  "Exported three working source examples, public schemas, and protocol instructions to examples/.",
+  "Exported three working source examples, public schemas, and protocol instructions to .local/examples/.",
 );

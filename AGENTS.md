@@ -54,4 +54,4 @@ bun run check
 
 Run `bun run build` when touching routing, auth, deployment, or Vite config.
 
-Run the relevant `test:prototype`, `test:flow`, and `test:model-contract` scripts after meaningful changes to runtime, release lifecycle or model wiring. The model contract suite uses a local transport fixture and does not prove live inference. If Convex codegen needs missing deployment credentials, record that exact limitation instead of claiming it passed.
+If Convex codegen needs missing deployment credentials, record that exact limitation instead of claiming it passed.
